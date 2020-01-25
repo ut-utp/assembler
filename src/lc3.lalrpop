@@ -1,0 +1,97 @@
+use lalrpop_util::ErrorRecovery;
+use crate::lexer::Tok;
+use crate::error::ParseError;
+use crate::ast::{Object, Operation, Operands, Reg, Sr2OrImm5, Immediate};
+
+grammar<'input, 'err>(
+    input: &'input str,
+    errors: &'err mut Vec<ErrorRecovery<usize, (usize, &'input str), ()>>
+);
+
+extern {
+    type Location = usize;
+    type Error = ();
+    enum Tok<'input> {
+        "ADD" => Tok::Add(<&'input str>),
+        "AND" => Tok::And(<&'input str>),
+        "BR" => Tok::Br(<&'input str>),
+        "JMP" => Tok::Jmp(<&'input str>),
+        "JSR" => Tok::Jsr(<&'input str>),
+        "JSRR" => Tok::Jsrr(<&'input str>),
+        "LD" => Tok::Ld(<&'input str>),
+        "LDI" => Tok::Ldi(<&'input str>),
+        "LDR" => Tok::Ldr(<&'input str>),
+        "LEA" => Tok::Lea(<&'input str>),
+        "NOT" => Tok::Not(<&'input str>),
+        "RET" => Tok::Ret(<&'input str>),
+        "RTI" => Tok::Rti(<&'input str>),
+        "ST" => Tok::St(<&'input str>),
+        "STI" => Tok::Sti(<&'input str>),
+        "STR" => Tok::Str(<&'input str>),
+        "TRAP" => Tok::Trap(<&'input str>),
+
+        "GETC" => Tok::Getc(<&'input str>),
+        "OUT" => Tok::Out(<&'input str>),
+        "PUTS" => Tok::Puts(<&'input str>),
+        "IN" => Tok::In(<&'input str>),
+        "PUTSP" => Tok::Putsp(<&'input str>),
+        "HALT" => Tok::Halt(<&'input str>),
+
+        ".ORIG" => Tok::Orig(<&'input str>),
+        ".FILL" => Tok::Fill(<&'input str>),
+        ".BLKW" => Tok::Blkw(<&'input str>),
+        ".STRINGZ" => Tok::Stringz(<&'input str>),
+        ".END" => Tok::End(<&'input str>),
+
+        "String" => Tok::String(<&'input str>),
+        "Comment" => Tok::Comment(<&'input str>),
+        "," => Tok::Comma,
+        "Newline" => Tok::Newline,
+
+        // Chunk of non-whitespace, non-comma, non-semicolon text.
+        // Used as a catch-all for tokens that need to be disambiguated at parse-time,
+        // for example, labels and hex literals which may both start with 'x'.
+        // In more general terms: labels and operands.
+        "Word" => Tok::Word(<&'input str>),
+    }
+}
+
+
+pub AddrImmediate: Immediate<'input, lc3_isa::Addr> = {
+    "Word" => {
+        let mut chars = <>.chars();
+        let first = chars.next();
+        let rest = chars.collect::<String>();
+        let value = match first {
+            Some('b') => lc3_isa::Addr::from_str_radix(rest.as_str(), 2)
+                            .map_err(|_| ParseError { message: String::from("Invalid binary immediate.")}),
+            Some('#') => lc3_isa::Addr::from_str_radix(rest.as_str(), 10)
+                            .map_err(|_| ParseError { message: String::from("Invalid decimal immediate.")}),
+            Some('x') => lc3_isa::Addr::from_str_radix(rest.as_str(), 16)
+                            .map_err(|_| ParseError { message: String::from("Invalid hex immediate.")}),
+            None => Err(ParseError { message: String::from("Empty string detected as Word. Please contact the maintainers.")}),
+            _ => Err(ParseError { message: String::from("Invalid address immediate.")}),
+        };
+        Immediate {
+            src: <>,
+            value: value,
+        }
+    }
+}
+
+pub Reg: Reg<'input> = {
+    "Word" => Reg {
+        src: <>,
+        reg: match <> {
+            "r0" | "R0" => Ok(lc3_isa::Reg::R0),
+            "r1" | "R1" => Ok(lc3_isa::Reg::R1),
+            "r2" | "R2" => Ok(lc3_isa::Reg::R2),
+            "r3" | "R3" => Ok(lc3_isa::Reg::R3),
+            "r4" | "R4" => Ok(lc3_isa::Reg::R4),
+            "r5" | "R5" => Ok(lc3_isa::Reg::R5),
+            "r6" | "R6" => Ok(lc3_isa::Reg::R6),
+            "r7" | "R7" => Ok(lc3_isa::Reg::R7),
+            _ => Err(ParseError { message: String::from("Invalid register")})
+        }
+    }
+};
