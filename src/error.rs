@@ -4,6 +4,4 @@ pub enum LexError {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ParseError {
-    pub message: String,
-}
+pub struct ParseError(pub String);

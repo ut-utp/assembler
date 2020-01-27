@@ -1,41 +1,72 @@
 use lc3_isa::{Addr, SignedWord};
 use crate::error::ParseError;
+use crate::lexer::Token;
 
-pub struct Object<'input> {
-    orig: Operation<'input>,
-    instructions: Vec<Operation<'input>>
+pub struct File<'input> {
+    pub objects: Vec<Object<'input>>,
+    pub ignored: Vec<Token<'input>>,
 }
 
-type Label<'input> = &'input str;
-type Separator<'input> = &'input str;
+impl<'input> File<'input> {
+    pub fn new() -> Self {
+        Self {
+            objects: Vec::new(),
+            ignored: Vec::new(),
+        }
+    }
+}
+
+pub struct Object<'input> {
+    pub orig: Operation<'input>,
+    pub instructions: Vec<Operation<'input>>,
+    pub ignored: Vec<Token<'input>>,
+}
+
+impl<'input> Object<'input> {
+    pub fn new(orig: Operation<'input>) -> Self {
+        Self {
+            orig,
+            instructions: Vec::new(),
+            ignored: Vec::new(),
+        }
+    }
+}
+
+type Label<'input> = Token<'input>;
+type Separator<'input> = Token<'input>;
 
 // Different from lc3_isa::Instruction in that offsets from labels aren't computed.
 // Also covers pseudo-ops.
 pub struct Operation<'input> {
-    opcode_src: &'input str,
-    operands: Operands<'input>,
-    separators_src: Vec<Option<&'input str>>,
+    pub label: Option<Label<'input>>,
+    pub opcode_src: Token<'input>,
+    pub operands: Operands<'input>,
+    pub separators_src: Vec<Separator<'input>>,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Reg<'input> {
-    pub src: &'input str,
+    pub src: Token<'input>,
     pub reg: Result<lc3_isa::Reg, ParseError>,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Sr2OrImm5<'input> {
     Sr2(Reg<'input>),
     Imm5(Immediate<'input, SignedWord>),
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Immediate<'input, T> {
-    pub src: &'input str,
-    pub value: Result<T, ParseError>,
+    pub src: Token<'input>,
+    pub value: T,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Operands<'input> {
     Add { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Sr2OrImm5<'input> },
     And { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Sr2OrImm5<'input> },
-    Br { nzp_src: &'input str, n: bool, z: bool, p: bool, label: Label<'input> },
+    Br { nzp_src: Token<'input>, n: bool, z: bool, p: bool, label: Label<'input> },
     Jmp { base: Reg<'input> },
     Jsr { label: Label<'input> },
     Jsrr { base: Reg<'input> },
@@ -60,7 +91,9 @@ pub enum Operands<'input> {
 
     Orig { origin: Immediate<'input, Addr> },
     Fill { value: Immediate<'input, SignedWord> },
-    Blkw { size_src: &'input str, size: Addr }, // Addr used here to signify a number of locations. Max is number of possible Addrs.
-    Stringz { string: &'input str },
+    Blkw { size_src: Token<'input>, size: Addr }, // Addr used here to signify a number of locations. Max is number of possible Addrs.
+    Stringz { string: Token<'input> },
     End,
+    
+    Invalid,
 }
