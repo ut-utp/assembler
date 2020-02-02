@@ -151,7 +151,6 @@ impl<'input> Lexer<'input> {
             cur_pos: 0,
         };
 
-        
         for (pattern, token_type) in Self::PATTERNS.iter() {
             this.register_pattern(pattern, *token_type);
         }

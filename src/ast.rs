@@ -39,7 +39,7 @@ type Separator<'input> = Token<'input>;
 // Also covers pseudo-ops.
 pub struct Operation<'input> {
     pub label: Option<Label<'input>>,
-    pub opcode_src: Token<'input>,
+    pub op_src: Token<'input>,
     pub operands: Operands<'input>,
     pub separators_src: Vec<Separator<'input>>,
 }

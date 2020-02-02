@@ -1,9 +1,8 @@
-use crate::lexer::{Lexer, TokenType, Token, Op, Opcode};
+use crate::lexer::{Lexer, TokenType::*, Token, Op, Opcode, PseudoOp::*};
 use crate::ast::{Object, File, Operation, Operands};
-use itertools::Itertools;
+use itertools::{Itertools, PeekingTakeWhile};
 use crate::error::ParseError;
 use std::iter::Peekable;
-use crate::lexer::PseudoOp;
 
 
 struct Parser<'input, 'l> {
@@ -23,24 +22,39 @@ impl<'input, 'l> Parser<'input, 'l>
     }
     
     pub fn parse(&mut self) -> &File<'input> {
-        while self.tokens.peek().is_some() {
-            let front_matter = self.tokens.peeking_take_while(|token| token.ty != TokenType::Op(Op::PseudoOp(PseudoOp::Orig)));
-            self.file.ignored.extend(front_matter);
+        // Get first object.
+        // We expect at least one object per file (otherwise, why would you try and assemble it?!).
+        self.skip_to_orig();
+        let object = self.parse_object();
+        self.file.objects.push(object);
+
+        // Get remaining objects
+        // Remove this loop if we want one object per file.
+        loop {
+            self.skip_to_orig();
+            if self.tokens.peek().is_none() {
+                break;
+            }
             let object = self.parse_object();
             self.file.objects.push(object);
+            if self.tokens.peek().is_none() {
+                break;
+            }
         }
 
         &self.file
     }
-    
+
+
     fn parse_object(&mut self) -> Object<'input> {
         let orig = self.parse_orig();
         let mut object = Object::new(orig);
         
         while self.tokens.peek().is_some() {
+            self.skip_line_breaks();
             let operation = self.parse_operation();
             object.instructions.push(operation);
-            if operation.operands == Operands::End { 
+            if let Operands::End = operation.operands {
                 break;
             }
         }
@@ -49,16 +63,19 @@ impl<'input, 'l> Parser<'input, 'l>
     }
     
     fn parse_orig(&mut self) -> Operation<'input> {
-        
+        let orig = match self.tokens.next() {
+            Some(Token { ty: Op(Op::PseudoOp(Orig)), .. }) => {
+
+            }
+            _ =>
+        }
     }
     
     fn parse_operation(&mut self) -> Operation<'input> {
-        self.skip_whitespace();
         let label = match self.tokens.peek() {
-            Some(Token { ty: TokenType::Word, .. }) => {
+            Some(Token { ty: Word, .. }) => {
                 let label = self.tokens.next().unwrap();
-                self.skip_whitespace();
-                self.skip_line_break();
+                self.skip_line_breaks();
                 Some(label)
             },
             Some(_) => None,
@@ -68,17 +85,23 @@ impl<'input, 'l> Parser<'input, 'l>
             },
         };
         self.skip_whitespace();
-        
     }
-    
+
+    fn skip_to_orig(&mut self) {
+        let skipped = self.tokens.peeking_take_while(|token| token.ty != Op(Op::PseudoOp(Op::Orig)));
+        self.file.ignored.extend(skipped);
+    }
+
     fn skip_whitespace(&mut self) {
-        let whitespace = self.tokens.take_while(|token| token.ty == TokenType::Whitespace);
+        let whitespace = self.tokens.peeking_take_while(|token| token.ty == Whitespace);
         self.file.ignored.extend(whitespace);
     }
     
-    // TODO: Comments
-    fn skip_line_break(&mut self) {
-        let whitespace = self.tokens.take_while(|token| token.ty == TokenType::Whitespace || token.ty == TokenType::Newline);
+    fn skip_line_breaks(&mut self) {
+        let whitespace = self.tokens.peeking_take_while(|token| match token.ty {
+            Whitespace | Comment | Newline => true,
+            _ => false,
+        });
         self.file.ignored.extend(whitespace);
     }
 }
