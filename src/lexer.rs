@@ -103,6 +103,7 @@ impl<'input> Lexer<'input> {
     // from the beginning of the slice it's examining, so don't use ^.
     const PATTERNS: [(&'static str, TokenType); 34] = [
         (r"[^\S\r\n]+", Whitespace),
+        
         (r"ADD",  Op(Op::Opcode(Add))),
         (r"AND",  Op(Op::Opcode(And))),
         (r"BR",   Op(Op::Opcode(Br))),

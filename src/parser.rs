@@ -1,125 +1,69 @@
-use crate::lexer::{Lexer, TokenType::*, Token, Op, Opcode, PseudoOp::*};
-use crate::ast::{Object, File, Operation, Operands};
-use itertools::{Itertools, PeekingTakeWhile};
-use crate::error::ParseError;
+use crate::lexer::{Lexer, Token, TokenType};
+use crate::ir1_simple_lines::{SimpleLines, SimpleLine};
 use std::iter::Peekable;
+use itertools::Itertools;
+//use crate::expanded;
+//
+//pub fn parse<'input>(lexer: &mut Lexer<'input>) -> expanded::File {
+//    
+//}
 
-
-struct Parser<'input, 'l> {
-    errors: Vec<ParseError>,
-    tokens: Peekable<&'l mut Lexer<'input>>,
-    file: File<'input>,
+fn parse_simple_lines<'input>(lexer: &mut Lexer<'input>) -> SimpleLines<'input> {
+    let mut tokens = lexer.peekable();
+    let mut simple_lines = Vec::new();
+    while tokens.peek().is_some() {
+        let simple_line = parse_simple_line(&mut tokens);
+        simple_lines.push(simple_line);
+    }
+    simple_lines
 }
 
-impl<'input, 'l> Parser<'input, 'l> 
-{
-    pub fn using_lexer(lexer: &'l mut Lexer<'input>) -> Self {
-        Self {
-            errors: Vec::new(),
-            tokens: lexer.peekable(),
-            file: File::new(),
-        }
-    }
-    
-    pub fn parse(&mut self) -> &File<'input> {
-        // Get first object.
-        // We expect at least one object per file (otherwise, why would you try and assemble it?!).
-        self.skip_to_orig();
-        let object = self.parse_object();
-        self.file.objects.push(object);
-
-        // Get remaining objects
-        // Remove this loop if we want one object per file.
-        loop {
-            self.skip_to_orig();
-            if self.tokens.peek().is_none() {
-                break;
+fn parse_simple_line<'input>(tokens: &mut Peekable<&mut Lexer<'input>>) -> SimpleLine<'input> {
+    let content = tokens.peeking_take_while(|&Token { ty, .. }|
+        ty != TokenType::Comment && ty != TokenType::Newline)
+        .collect();
+    let next = tokens.next();
+    let (comment, newline) = match next {
+        Some(Token { ty: TokenType::Comment, .. }) => {
+            let newline = tokens.next();
+            if let Some(Token { ty, .. }) = newline {
+                assert_eq!(ty, TokenType::Newline); // TODO: find a non-panicky (read: hacky) way to verify this. Seems safe, though.
             }
-            let object = self.parse_object();
-            self.file.objects.push(object);
-            if self.tokens.peek().is_none() {
-                break;
-            }
-        }
-
-        &self.file
-    }
-
-
-    fn parse_object(&mut self) -> Object<'input> {
-        let orig = self.parse_orig();
-        let mut object = Object::new(orig);
-        
-        while self.tokens.peek().is_some() {
-            self.skip_line_breaks();
-            let operation = self.parse_operation();
-            object.instructions.push(operation);
-            if let Operands::End = operation.operands {
-                break;
-            }
-        }
-        
-        object
-    }
-    
-    fn parse_orig(&mut self) -> Operation<'input> {
-        let orig = match self.tokens.next() {
-            Some(Token { ty: Op(Op::PseudoOp(Orig)), .. }) => {
-
-            }
-            _ =>
-        }
-    }
-    
-    fn parse_operation(&mut self) -> Operation<'input> {
-        let label = match self.tokens.peek() {
-            Some(Token { ty: Word, .. }) => {
-                let label = self.tokens.next().unwrap();
-                self.skip_line_breaks();
-                Some(label)
-            },
-            Some(_) => None,
-            None => {
-                self.errors.push(ParseError(r#"Hit end of file while looking for next instruction. Suggestion: add a ".END" pseudo-op."#.to_string()));
-                None
-            },
-        };
-        self.skip_whitespace();
-    }
-
-    fn skip_to_orig(&mut self) {
-        let skipped = self.tokens.peeking_take_while(|token| token.ty != Op(Op::PseudoOp(Op::Orig)));
-        self.file.ignored.extend(skipped);
-    }
-
-    fn skip_whitespace(&mut self) {
-        let whitespace = self.tokens.peeking_take_while(|token| token.ty == Whitespace);
-        self.file.ignored.extend(whitespace);
-    }
-    
-    fn skip_line_breaks(&mut self) {
-        let whitespace = self.tokens.peeking_take_while(|token| match token.ty {
-            Whitespace | Comment | Newline => true,
-            _ => false,
-        });
-        self.file.ignored.extend(whitespace);
-    }
+            (next, newline)
+        },
+        Some(Token { ty: TokenType::Newline, .. }) => (None, next),
+        Some(_) => unreachable!(),
+        None => (None, None),
+    };
+    SimpleLine { content, comment, newline }
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_simple_lines_no_newline() {
+        let mut lexer = Lexer::new("ADD");
+        let simple_lines = parse_simple_lines(&mut lexer);
+        let SimpleLine { content, comment, newline } = simple_lines.get(0).unwrap();
+        assert_eq!(content.len(), 1);
+        assert!(comment.is_none());
+        assert!(newline.is_none());
+    }
     
     #[test]
-    fn test_parse_front_matter() {
-        let input = "This is a quick test. .ORIG x3000";
-        let mut lexer = Lexer::new(input);
+    fn test_parse_simple_lines_two_lines() {
+        let mut lexer = Lexer::new("ADD ; test\n.END");
+        let simple_lines = parse_simple_lines(&mut lexer);
+        let SimpleLine { content, comment, newline } = simple_lines.get(0).unwrap();
+        assert_eq!(content.len(), 2);
+        assert!(comment.is_some());
+        assert!(newline.is_some());
         
-        let mut parser = Parser::using_lexer(&mut lexer);
-        let file = parser.parse();
-        for token in file.ignored {
-            println!("{:?}", token);
-        }
+        let SimpleLine { content, comment, newline } = simple_lines.get(1).unwrap();
+        assert_eq!(content.len(), 1);
+        assert!(comment.is_none());
+        assert!(newline.is_none());
     }
 }
