@@ -13,9 +13,16 @@ repository = "http://github.com/ut-utp/assembler"
 readme = "README.md"
 
 keywords = ["lc-3", "cli", "assembler", "tooling", "utp"]
-categories = ["simulation", "command-line-utilities"]
+categories = ["assembly", "tooling", "command-line-utilities"]
 
 license = "MPL-2.0"
+
+default-run = "assembler"
+
+
+[[bin]]
+name = "assembler"
+path = "bin/as.rs"
 
 
 [badges]
