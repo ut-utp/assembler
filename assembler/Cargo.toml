@@ -1,0 +1,37 @@
+[package]
+name = "lc3-assembler"
+version = "0.1.0"
+authors = ["UT UTP <ut.utp.group@gmail.com>"]
+edition = "2018"
+
+workspace = ".."
+
+description = "A little assembler for a little computer."
+homepage = "https://ut-utp.github.io"
+repository = "http://github.com/ut-utp/assembler"
+
+readme = "README.md"
+
+keywords = ["lc-3", "cli", "assembler", "tooling", "utp"]
+categories = ["simulation", "command-line-utilities"]
+
+license = "MPL-2.0"
+
+
+[badges]
+github-actions = { repository = "ut-utp/assembler", workflow = "assembler" }
+codecov = { repository = "ut-utp/assembler", branch = "master", service = "github" }
+
+is-it-maintained-issue-resolution = { repository = "ut-utp/assembler" }
+is-it-maintained-open-issues = { repository = "ut-utp/assembler" }
+maintenance = { status = "actively-developed" }
+
+
+[dependencies]
+regex = "0.2.1"
+itertools = "0.8.2"
+lc3-isa = { git = "https://github.com/ut-utp/prototype", branch = "master", version = "0.1.0", default-features = false }
+# TODO: ^ eventually don't pull this from git
+
+[dev-dependencies]
+pretty_assertions = "0.6.1"

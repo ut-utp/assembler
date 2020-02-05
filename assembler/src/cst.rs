@@ -24,7 +24,7 @@ pub struct Operation<'input> {
     pub label: Option<Label<'input>>,
     pub operator: Token<'input>,
     pub operands: Operands<'input>,
-    
+
     pub separators: Vec<Separator<'input>>,
     pub whitespace: Vec<Token<'input>>,
     pub comments: Vec<Token<'input>>,
@@ -62,13 +62,13 @@ pub enum Operands<'input> {
     Ldr { dr: Reg<'input>, base: Reg<'input>, offset6: Immediate<'input, SignedWord> },
     Lea { dr: Reg<'input>, label: Label<'input> },
     Not { dr: Reg<'input>, sr: Reg<'input> },
-    Ret, 
-    Rti, 
+    Ret,
+    Rti,
     St { sr: Reg<'input>, label: Label<'input> },
     Sti { sr: Reg<'input>, label: Label<'input> },
     Str { sr: Reg<'input>, base: Reg<'input>, offset6: Immediate<'input, SignedWord> },
     Trap { trapvec: u8 },
-    
+
     Getc,
     Out,
     Puts,
@@ -81,6 +81,6 @@ pub enum Operands<'input> {
     Blkw { size_src: Token<'input>, size: Addr }, // Addr used here to signify a number of locations. Max is number of possible Addrs.
     Stringz { string: Token<'input> },
     End,
-    
+
     Invalid,
 }

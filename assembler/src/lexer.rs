@@ -15,21 +15,21 @@ pub struct Token<'input> {
 pub enum TokenType {
     // Insignificant Whitespace
     Whitespace,
-    
+
     Op(Op),
 
     // String Literals
     // Numeric literals starting with x can't be disambiguated from labels,
     // so we'll do that later based on position.
     String,
-    
+
     // Comments
     Comment,
-    
+
     // Punctuation
     Comma,
     Newline,
-    
+
     // Chunk of non-whitespace, non-comma, non-semicolon text.
     // Used as a catch-all for tokens that need to be disambiguated at parse-time,
     // for example, labels and hex literals which may both start with 'x'.
@@ -96,14 +96,14 @@ use NamedTrap::*;
 use PseudoOp::*;
 
 impl<'input> Lexer<'input> {
-    
+
     // The lexer tries to find these patterns in this order.
     // Registering a pattern will automatically append some stuff to the regex.
     // Notably, it will add ^ to the beginning to ensure that it grabs tokens
     // from the beginning of the slice it's examining, so don't use ^.
     const PATTERNS: [(&'static str, TokenType); 34] = [
         (r"[^\S\r\n]+", Whitespace),
-        
+
         (r"ADD",  Op(Op::Opcode(Add))),
         (r"AND",  Op(Op::Opcode(And))),
         (r"BR",   Op(Op::Opcode(Br))),
@@ -121,14 +121,14 @@ impl<'input> Lexer<'input> {
         (r"STR",  Op(Op::Opcode(Str))),
         (r"ST",   Op(Op::Opcode(St))),
         (r"TRAP", Op(Op::Opcode(Trap))),
-        
+
         (r"GETC",  Op(Op::NamedTrap(Getc))),
         (r"OUT",   Op(Op::NamedTrap(Out))),
         (r"PUTS",  Op(Op::NamedTrap(Puts))),
         (r"IN",    Op(Op::NamedTrap(In))),
         (r"PUTSP", Op(Op::NamedTrap(Putsp))),
         (r"HALT",  Op(Op::NamedTrap(Halt))),
-        
+
         (r".ORIG",    Op(Op::PseudoOp(Orig))),
         (r".FILL",    Op(Op::PseudoOp(Fill))),
         (r".BLKW",    Op(Op::PseudoOp(Blkw))),
@@ -155,11 +155,11 @@ impl<'input> Lexer<'input> {
         for (pattern, token_type) in Self::PATTERNS.iter() {
             this.register_pattern(pattern, *token_type);
         }
-        
+
         this
     }
-    
-    fn register_pattern(&mut self, pattern: &str, token_type: TokenType) 
+
+    fn register_pattern(&mut self, pattern: &str, token_type: TokenType)
     {
         assert!(!pattern.starts_with("^"));
         let pattern = format!("^(?i){}", pattern);
@@ -203,7 +203,9 @@ impl<'input> Iterator for Lexer<'input> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
+    use pretty_assertions::assert_eq;
+
     #[test]
     fn test_simple() { // TODO: actually assert some stuff
         let input = ".ORIG x3000\nTEST add R0, R0, R0; Tokenize me, cap'n!\nBRnzp TEST\nHALT\n.END";

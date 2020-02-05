@@ -8,7 +8,7 @@ use crate::error::ParseError;
 //use crate::expanded;
 //
 //pub fn parse<'input>(lexer: &mut Lexer<'input>) -> expanded::File {
-//    
+//
 //}
 
 fn parse_simple_lines<'input>(lexer: &mut Lexer<'input>) -> SimpleLines<'input> {
@@ -185,6 +185,8 @@ fn parse_whitespace<'input, T>(tokens: &mut Peekable<T>, whitespace: &mut Vec<To
 mod tests {
     use super::*;
 
+    use pretty_assertions::assert_eq;
+
     #[test]
     fn test_parse_simple_lines_no_newline() {
         let mut lexer = Lexer::new("ADD");
@@ -194,7 +196,7 @@ mod tests {
         assert!(comment.is_none());
         assert!(newline.is_none());
     }
-    
+
     #[test]
     fn test_parse_simple_lines_two_lines() {
         let mut lexer = Lexer::new("ADD ; test\n.END");
@@ -203,7 +205,7 @@ mod tests {
         assert_eq!(content.len(), 2);
         assert!(comment.is_some());
         assert!(newline.is_some());
-        
+
         let SimpleLine { content, comment, newline } = simple_lines.get(1).unwrap();
         assert_eq!(content.len(), 1);
         assert!(comment.is_none());

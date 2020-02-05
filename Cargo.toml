@@ -1,11 +1,4 @@
-[package]
-name = "assembler"
-version = "0.1.0"
-authors = ["gipsond <david.gipson@utexas.edu>"]
-edition = "2018"
-
-[dependencies]
-regex = "0.2.1"
-itertools = "0.8.2"
-lc3-isa = { path = "../../isa", version = "0.1.0", default-features = false, features = ["no_std"] }
-
+[workspace]
+members = [
+    "assembler",
+]
