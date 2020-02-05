@@ -17,6 +17,6 @@ pub struct UnvalidatedLine<'input> {
     label: Option<Label<'input>>,
     operation: OperationTokens<'input>,
     whitespace: Vec<Token<'input>>,
-    comment: Option<Token<'input>>,
-    newline: Option<Token<'input>>,
+    comments: Vec<Token<'input>>,
+    newlines: Vec<Token<'input>>,
 }

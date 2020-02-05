@@ -27,8 +27,8 @@ pub struct Operation<'input> {
     
     pub separators: Vec<Separator<'input>>,
     pub whitespace: Vec<Token<'input>>,
-    pub comment: Option<Token<'input>>,
-    pub newline: Option<Token<'input>>,
+    pub comments: Vec<Token<'input>>,
+    pub newlines: Vec<Token<'input>>,
 }
 
 pub struct Checked<'input, T> {
