@@ -34,7 +34,7 @@ pub enum TokenType {
     // Used as a catch-all for tokens that need to be disambiguated at parse-time,
     // for example, labels and hex literals which may both start with 'x'.
     // In more general terms: labels and operands.
-    Word,
+    Ambiguous,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -142,7 +142,7 @@ impl<'input> Lexer<'input> {
         (r",",            Comma),
         (r"(\r\n|\r|\n)", Newline),
 
-        (r"[^\s,;]+", Word), // At least one non-whitespace, non-comma, non-semicolon character.
+        (r"[^\s,;]+", Ambiguous), // At least one non-whitespace, non-comma, non-semicolon character.
     ];
 
     pub fn new(src: &'input str) -> Lexer<'input> {

@@ -17,9 +17,9 @@ pub enum LineContent<'input> {
 }
 
 pub struct OperationTokens<'input> {
-    operator: Token<'input>,
-    operands: OperandTokens<'input>,
-    separators: Vec<Token<'input>>, // To include internal whitespace, but not surrounding
+    pub operator: Token<'input>,
+    pub operands: OperandTokens<'input>,
+    pub separators: Vec<Token<'input>>, // To include internal whitespace, but not surrounding
 }
 
 pub enum OperandTokens<'input> {
@@ -50,7 +50,7 @@ pub enum OperandTokens<'input> {
 
     Orig { origin: Token<'input> },
     Fill { value: Token<'input> },
-    Blkw { size_src: Token<'input>, size: Token<'input> }, // Addr used here to signify a number of locations. Max is number of possible Addrs.
+    Blkw { size: Token<'input> },
     Stringz { string: Token<'input> },
     End,
 }
