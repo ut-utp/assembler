@@ -59,9 +59,9 @@ fn parse_line<'input>(simple_line: &'input SimpleLine<'input>) -> Line<'input> {
     skip_and_collect_whitespace(&mut tokens, &mut whitespace);
     let label = parse_ambiguous(&mut tokens).ok();
     skip_and_collect_whitespace(&mut tokens, &mut whitespace);
-    let content = parse_operation_tokens(&mut tokens).map_or(
+    let content = parse_operation_tokens(&mut tokens, &mut whitespace).map_or(
         LineContent::Invalid(old_content.clone()),
-        |operation_tokens| LineContent::Valid(label, operation_tokens)
+        |operation_tokens| { LineContent::Valid(label, operation_tokens) }
     );
     skip_and_collect_whitespace(&mut tokens, &mut whitespace);
     Line { content, whitespace, comment, newline, }
@@ -79,16 +79,29 @@ fn parse_string<'input, T>(tokens: &mut Peekable<T>) -> Result<Token<'input>, Pa
     parse_token(tokens, TokenType::String)
 }
 
-fn parse_token<'input, T>(tokens: &mut Peekable<T>, ty: TokenType) -> Result<Token<'input>, ParseError>
+fn parse_token<'input, T>(tokens: &mut Peekable<T>, target_type: TokenType) -> Result<Token<'input>, ParseError>
     where T: Iterator<Item=&'input Token<'input>>
 {
-    if let Some(Token { ty: ty, .. }) = tokens.peek() {
-        Ok(tokens.next().unwrap().clone())
-    } else {
-        Err(ParseError("Didn't find ambiguous token next.".to_string()))
+    if let Some(Token { ty, .. }) = tokens.peek() {
+        if *ty == target_type {
+            return Ok(tokens.next().unwrap().clone());
+        }
     }
+    Err(ParseError("Didn't find ambiguous token next.".to_string()))
 }
 
+// Expands to the necessary steps to parse operands into a given OperandTokens struct variant.
+// Ex: fill_operands! { 3; Add { dr, sr1, sr2_or_imm5, }; tokens, separators }
+// expands to:
+// let whitespace = parse_whitespace(tokens)?;
+// separators.extend(whitespace);
+// let mut operand_buffer: [Option<Token<'input>>; 3] = [None; 3];
+// parse_operands(tokens, &mut separators, &mut operand_buffer)?;
+// OperandTokens::Add {
+//     dr: operand_buffer[0].unwrap(),
+//     sr1: operand_buffer[1].unwrap(),
+//     sr2_or_imm5: operand_buffer[2].unwrap(),
+// }
 macro_rules! fill_operands {
     (@munch ($op_buf:ident) -> { $name:ident, $(($field:ident, $value:expr))* }) => {
         OperandTokens::$name {
@@ -113,68 +126,80 @@ macro_rules! fill_operands {
     };
 }
 
+fn parse_operand_tokens<'input, T>(op: Op, mut tokens: &mut Peekable<T>, mut separators: &mut Vec<Token<'input>>) -> Result<OperandTokens<'input>, ParseError>
+    where T: Iterator<Item=&'input Token<'input>>
+{
+    let operands = match op {
+        Op::Opcode(opcode) => match opcode {
+            Opcode::Add => { fill_operands! { 3; Add { dr, sr1, sr2_or_imm5, }; tokens, separators } },
+            Opcode::And => { fill_operands! { 3; And { dr, sr1, sr2_or_imm5, }; tokens, separators } },
+            Opcode::Br => { // Specially handled due to nzp
+                let nzp = parse_ambiguous(tokens)?;
+                let whitespace = parse_whitespace(tokens)?;
+                separators.extend(whitespace);
+                let label = parse_ambiguous(tokens)?;
+                OperandTokens::Br { nzp, label }
+            },
+            Opcode::Jmp  => { fill_operands! { 1; Jmp { base, }; tokens, separators } },
+            Opcode::Jsr  => { fill_operands! { 1; Jsr { label, }; tokens, separators } },
+            Opcode::Jsrr => { fill_operands! { 1; Jsrr { base, }; tokens, separators } },
+            Opcode::Ld   => { fill_operands! { 2; Ld { dr, label, }; tokens, separators } },
+            Opcode::Ldi  => { fill_operands! { 2; Ldi { dr, label, }; tokens, separators } },
+            Opcode::Ldr  => { fill_operands! { 3; Ldr { dr, base, offset6, }; tokens, separators } },
+            Opcode::Lea  => { fill_operands! { 2; Lea { dr, label, }; tokens, separators } },
+            Opcode::Not  => { fill_operands! { 2; Not { dr, sr, }; tokens, separators } },
+            Opcode::Ret  => OperandTokens::Ret,
+            Opcode::Rti  => OperandTokens::Rti,
+            Opcode::St   => { fill_operands! { 2; St { sr, label, }; tokens, separators } },
+            Opcode::Sti  => { fill_operands! { 2; Sti { sr, label, }; tokens, separators } },
+            Opcode::Str  => { fill_operands! { 3; Str { sr, base, offset6, }; tokens, separators } },
+            Opcode::Trap => { fill_operands! { 1; Trap { trap_vec, }; tokens, separators } },
+        },
+        Op::NamedTrap(named_trap) => match named_trap {
+            NamedTrap::Getc  => OperandTokens::Getc,
+            NamedTrap::Out   => OperandTokens::Out,
+            NamedTrap::Puts  => OperandTokens::Puts,
+            NamedTrap::In    => OperandTokens::In,
+            NamedTrap::Putsp => OperandTokens::Putsp,
+            NamedTrap::Halt  => OperandTokens::Halt,
+        },
+        Op::PseudoOp(pseudo_op) => match pseudo_op {
+            PseudoOp::Orig => { fill_operands! { 1; Orig { origin, }; tokens, separators } },
+            PseudoOp::Fill => { fill_operands! { 1; Fill { value, }; tokens, separators } },
+            PseudoOp::Blkw => { fill_operands! { 1; Blkw { size, }; tokens, separators } },
+            PseudoOp::Stringz => {
+                let whitespace = parse_whitespace(tokens)?;
+                separators.extend(whitespace);
+                let string = parse_string(tokens)?;
+                OperandTokens::Stringz { string }
+            },
+            PseudoOp::End => OperandTokens::End,
+        },
+    };
+    Ok(operands)
+}
+
 // Return None if no operation but valid line (i.e. only whitespace (optionally))
 // ^^^ assumes whitespace has already been skipped.
 // Return Err if line doesn't have valid pattern of tokens
-fn parse_operation_tokens<'input, T>(tokens: &mut Peekable<T>) -> Result<Option<OperationTokens<'input>>, ParseError>
-    where T: Iterator<Item=&'input Token<'input>>
+fn parse_operation_tokens<'input, T>(mut tokens: &mut Peekable<T>, mut whitespace: &mut Vec<Token<'input>>) -> Result<Option<OperationTokens<'input>>, ParseError>
+where T: Iterator<Item=&'input Token<'input>>
 {
     match tokens.next() {
         Some(token) => match token.ty {
             TokenType::Op(op) => {
-                let operator = token;
+                let operator = token.clone();
                 let mut separators = Vec::new();
-                let operands = match op {
-                    Op::Opcode(opcode) => match opcode {
-                        Opcode::Add => { fill_operands! { 3; Add { dr, sr1, sr2_or_imm5, }; tokens, separators } },
-                        Opcode::And => { fill_operands! { 3; And { dr, sr1, sr2_or_imm5, }; tokens, separators } },
-                        Opcode::Br => { // Specially handled due to nzp
-                            let nzp = parse_ambiguous(tokens)?;
-                            let whitespace = parse_whitespace(tokens)?;
-                            separators.extend(whitespace);
-                            let label = parse_ambiguous(tokens)?;
-                            OperandTokens::Br { nzp, label }
-                        },
-                        Opcode::Jmp  => { fill_operands! { 1; Jmp { base, }; tokens, separators } },
-                        Opcode::Jsr  => { fill_operands! { 1; Jsr { label, }; tokens, separators } },
-                        Opcode::Jsrr => { fill_operands! { 1; Jsrr { base, }; tokens, separators } },
-                        Opcode::Ld   => { fill_operands! { 2; Ld { dr, label, }; tokens, separators } },
-                        Opcode::Ldi  => { fill_operands! { 2; Ldi { dr, label, }; tokens, separators } },
-                        Opcode::Ldr  => { fill_operands! { 3; Ldr { dr, base, offset6, }; tokens, separators } },
-                        Opcode::Lea  => { fill_operands! { 2; Lea { dr, label, }; tokens, separators } },
-                        Opcode::Not  => { fill_operands! { 2; Not { dr, sr, }; tokens, separators } },
-                        Opcode::Ret  => OperandTokens::Ret,
-                        Opcode::Rti  => OperandTokens::Rti,
-                        Opcode::St   => { fill_operands! { 2; St { sr, label, }; tokens, separators } },
-                        Opcode::Sti  => { fill_operands! { 2; Sti { sr, label, }; tokens, separators } },
-                        Opcode::Str  => { fill_operands! { 3; Str { sr, base, offset6, }; tokens, separators } },
-                        Opcode::Trap => { fill_operands! { 1; Trap { trap_vec, }; tokens, separators } },
-                    },
-                    Op::NamedTrap(named_trap) => match named_trap {
-                        NamedTrap::Getc  => OperandTokens::Getc,
-                        NamedTrap::Out   => OperandTokens::Out,
-                        NamedTrap::Puts  => OperandTokens::Puts,
-                        NamedTrap::In    => OperandTokens::In,
-                        NamedTrap::Putsp => OperandTokens::Putsp,
-                        NamedTrap::Halt  => OperandTokens::Halt,
-                    },
-                    Op::PseudoOp(pseudo_op) => match pseudo_op {
-                        PseudoOp::Orig => { fill_operands! { 1; Orig { origin, }; tokens, separators } },
-                        PseudoOp::Fill => { fill_operands! { 1; Fill { value, }; tokens, separators } },
-                        PseudoOp::Blkw => { fill_operands! { 1; Blkw { size, }; tokens, separators } },
-                        PseudoOp::Stringz => {
-                            let whitespace = parse_whitespace(tokens)?;
-                            separators.extend(whitespace);
-                            let string = parse_string(tokens)?;
-                            OperandTokens::Stringz { string }
-                        },
-                        PseudoOp::End => OperandTokens::End,
-                    },
-                };
-                let operator = operator.clone();
-                Ok(Some(OperationTokens { operator, operands, separators }))
+                let operands = parse_operand_tokens(op, tokens, &mut separators)?;
+                skip_and_collect_whitespace(&mut tokens, &mut whitespace);
+                if let Some(_) = tokens.peek() {
+                    Err(ParseError("Extra tokens at end of line.".to_string()))
+                } else {
+                    Ok(Some(OperationTokens { operator, operands, separators }))
+                }
             }
-            _ => Err(ParseError(String::new())) // TODO: handle here or elsewhere? See other empty strings in this function too
+            TokenType::Whitespace => unreachable!("Function was called without first skipping whitespace."),
+            _ => Err(ParseError("Unexpected non-operator token at beginning of 'instruction'".to_string()))
         }
         None => Ok(None),
     }
@@ -263,5 +288,45 @@ mod tests {
         assert_eq!(content.len(), 1);
         assert!(comment.is_none());
         assert!(newline.is_none());
+    }
+
+    #[test]
+    fn test_parse_lines_add() {
+        let mut lexer = Lexer::new("ADD R0, R0, R0");
+        let simple_lines = parse_simple_lines(&mut lexer);
+        let lines = parse_lines(&simple_lines);
+        let Line { content, whitespace, comment, newline } = lines.get(0).unwrap();
+        println!("{:?}", content);
+        let matches = if let LineContent::Valid(None, Some(operation_tokens)) = content {
+            if let OperationTokens { operator, operands, separators } = operation_tokens {
+                if let OperandTokens::Add { .. } = operands {
+                    true
+                } else { false }
+            } else { false }
+        } else { false };
+        assert!(matches);
+    }
+
+    #[test]
+    fn test_parse_lines_label_add() {
+        let mut lexer = Lexer::new("LABEL\n\tADD R0, R1, #1");
+        let simple_lines = parse_simple_lines(&mut lexer);
+        let lines = parse_lines(&simple_lines);
+
+        let Line { content, whitespace, comment, newline } = lines.get(0).unwrap();
+        println!("{:?}", content);
+        let line_0_matches = if let LineContent::Valid(Some(_), None) = content { true } else { false };
+        assert!(line_0_matches);
+
+        let Line { content, whitespace, comment, newline } = lines.get(1).unwrap();
+        println!("{:?}", content);
+        let line_1_matches = if let LineContent::Valid(None, Some(operation_tokens)) = content {
+            if let OperationTokens { operator, operands, separators } = operation_tokens {
+                if let OperandTokens::Add { .. } = operands {
+                    true
+                } else { false }
+            } else { false }
+        } else { false };
+        assert!(line_1_matches);
     }
 }

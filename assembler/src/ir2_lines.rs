@@ -11,17 +11,20 @@ pub struct Line<'input> {
 
 pub type Label<'input> = Token<'input>;
 
+#[derive(Debug)]
 pub enum LineContent<'input> {
     Valid(Option<Label<'input>>, Option<OperationTokens<'input>>),
     Invalid(Vec<Token<'input>>)
 }
 
+#[derive(Debug)]
 pub struct OperationTokens<'input> {
     pub operator: Token<'input>,
     pub operands: OperandTokens<'input>,
     pub separators: Vec<Token<'input>>, // To include internal whitespace, but not surrounding
 }
 
+#[derive(Debug)]
 pub enum OperandTokens<'input> {
     Add { dr: Token<'input>, sr1: Token<'input>, sr2_or_imm5: Token<'input> },
     And { dr: Token<'input>, sr1: Token<'input>, sr2_or_imm5: Token<'input> },
