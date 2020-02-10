@@ -6,6 +6,8 @@ use itertools::Itertools;
 use crate::ir2_lines::{Lines, Line, OperandTokens, LineContent, OperationTokens, Label};
 use crate::error::ParseError;
 use crate::ir3_unvalidated_objects::{UnvalidatedFile, UnvalidatedObject, UnvalidatedLine};
+use crate::cst::{Reg, Checked, Immediate};
+use lc3_isa::SignedWord;
 //use crate::expanded;
 //
 //pub fn parse<'input>(lexer: &mut Lexer<'input>) -> expanded::File {
@@ -470,4 +472,35 @@ fn parse_unvalidated_object<'input, T>(lines: &mut Peekable<T>) -> Result<Unvali
     }
     
     Ok(UnvalidatedObject { operations, empty_lines, hanging_labels, invalid_lines })
+}
+
+//////////
+// IR 4 //
+//////////
+
+fn validate_reg(src: Token) -> Reg {
+    let value = if let Some("r") | Some("R") = src.src.get(..=0) {
+        let isa_reg = src.src.get(1..).and_then(|c| match c {
+            "0" => Some(lc3_isa::Reg::R0),
+            "1" => Some(lc3_isa::Reg::R1),
+            "2" => Some(lc3_isa::Reg::R2),
+            "3" => Some(lc3_isa::Reg::R3),
+            "4" => Some(lc3_isa::Reg::R4),
+            "5" => Some(lc3_isa::Reg::R5),
+            "6" => Some(lc3_isa::Reg::R6),
+            "7" => Some(lc3_isa::Reg::R7),
+            _ => None,
+        });
+        isa_reg.ok_or(ParseError("Invalid register: didn't follow R with only 0-7".to_string()))
+    } else {
+        Err(ParseError("Invalid register: didn't start with R".to_string()))
+    };
+    Reg { src, value }
+}
+
+fn validate_numeric_immediate(src: Token) -> Immediate<SignedWord> {
+    Immediate {
+        src,
+        value: Ok(0)
+    }
 }

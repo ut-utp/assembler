@@ -81,6 +81,4 @@ pub enum Operands<'input> {
     Blkw { size_src: Token<'input>, size: Addr }, // Addr used here to signify a number of locations. Max is number of possible Addrs.
     Stringz { string: Token<'input> },
     End,
-
-    Invalid,
 }
