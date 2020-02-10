@@ -370,17 +370,26 @@ fn parse_unvalidated_file<'input>(lines: &'input Lines<'input>) -> UnvalidatedFi
                 }
             ) => { // Re-engaging readability stabilizers...
                 let object = parse_unvalidated_object(&mut lines);
-                if let Ok(object) = object {
-                    objects.push(object);
+                match object {
+                    Ok(object) => { objects.push(object); },
+                    Err(ObjectParseError { lines_seen, ..}) => { ignored.extend(lines_seen) },
                 }
             },
-            Some(_) => { ignored.push(lines.next().unwrap().clone()); },
+            Some(&line) => { 
+                ignored.push(line.clone());
+                lines.next(); 
+            },
         }
     }
     UnvalidatedFile { objects, ignored }
 }
 
-fn parse_unvalidated_object<'input, T>(lines: &mut Peekable<T>) -> Result<UnvalidatedObject<'input>, ParseError>
+struct ObjectParseError<'input> {
+    message: String,
+    lines_seen: Vec<Line<'input>>,
+}
+
+fn parse_unvalidated_object<'input, T>(lines: &mut Peekable<T>) -> Result<UnvalidatedObject<'input>, ObjectParseError<'input>>
     where T: Iterator<Item=&'input Line<'input>>
 {
     let mut operations = Vec::new();
@@ -388,8 +397,14 @@ fn parse_unvalidated_object<'input, T>(lines: &mut Peekable<T>) -> Result<Unvali
     let mut hanging_labels = Vec::new();
     let mut invalid_lines = Vec::new();
     
+    let mut lines_seen = Vec::new();
+    
     loop {
-        let line = lines.next().ok_or(ParseError("Hit end of file before .END".to_string()))?;
+        let line = lines.next().ok_or(ObjectParseError {
+            message: "Hit end of file before .END".to_string(),
+            lines_seen: lines_seen.clone()
+        })?;
+        lines_seen.push(line.clone());
         
         let mut whitespace = Vec::new();
         whitespace.extend(line.whitespace.clone());
