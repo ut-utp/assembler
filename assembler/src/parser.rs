@@ -8,6 +8,7 @@ use crate::error::ParseError;
 use crate::ir3_unvalidated_objects::{UnvalidatedFile, UnvalidatedObject, UnvalidatedLine};
 use crate::cst::{Reg, Checked, Immediate};
 use lc3_isa::SignedWord;
+use std::convert::{TryInto, TryFrom};
 //use crate::expanded;
 //
 //pub fn parse<'input>(lexer: &mut Lexer<'input>) -> expanded::File {
@@ -144,6 +145,8 @@ fn parse_token<'input, T>(tokens: &mut Peekable<T>, target_type: TokenType) -> R
 //     sr1: operand_buffer[1].unwrap(),
 //     sr2_or_imm5: operand_buffer[2].unwrap(),
 // }
+
+// TODO: put inside parse_operand_tokens to make it so we don't have to pass in references to tokens and separators
 macro_rules! fill_operands {
     (@munch ($op_buf:ident) -> { $name:ident, $(($field:ident, $value:expr))* }) => {
         OperandTokens::$name {
@@ -162,7 +165,7 @@ macro_rules! fill_operands {
     ($num:expr; $name:ident { $($input:tt)+ }; $tokens:ident, $separators:ident) => {
         let whitespace = parse_whitespace($tokens)?;
         $separators.extend(whitespace);
-        let mut operand_buffer: [Option<Token<'input>>; $num] = [None; $num];
+        let mut operand_buffer: [Option<Token<'input>>; $num] = [None; $num]; // TODO: write inner macro to munch and get size of array
         parse_operands($tokens, &mut $separators, &mut operand_buffer)?;
         fill_operands! { @munch (0usize, operand_buffer, $($input)+) -> { $name, } }
     };
@@ -480,18 +483,11 @@ fn parse_unvalidated_object<'input, T>(lines: &mut Peekable<T>) -> Result<Unvali
 
 fn validate_reg(src: Token) -> Reg {
     let value = if let Some("r") | Some("R") = src.src.get(..=0) {
-        let isa_reg = src.src.get(1..).and_then(|c| match c {
-            "0" => Some(lc3_isa::Reg::R0),
-            "1" => Some(lc3_isa::Reg::R1),
-            "2" => Some(lc3_isa::Reg::R2),
-            "3" => Some(lc3_isa::Reg::R3),
-            "4" => Some(lc3_isa::Reg::R4),
-            "5" => Some(lc3_isa::Reg::R5),
-            "6" => Some(lc3_isa::Reg::R6),
-            "7" => Some(lc3_isa::Reg::R7),
-            _ => None,
-        });
-        isa_reg.ok_or(ParseError("Invalid register: didn't follow R with only 0-7".to_string()))
+        src.src.get(1..)
+            .filter(|s| s.len() == 1)
+            .and_then(|s| s.parse::<u8>().ok())
+            .and_then(|i| i.try_into().ok())
+            .ok_or(ParseError("Invalid register: didn't follow R with only 0-7".to_string()))
     } else {
         Err(ParseError("Invalid register: didn't start with R".to_string()))
     };
@@ -499,6 +495,7 @@ fn validate_reg(src: Token) -> Reg {
 }
 
 fn validate_numeric_immediate(src: Token) -> Immediate<SignedWord> {
+
     Immediate {
         src,
         value: Ok(0)
