@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        crate: [ assembler ]
+        crate: [ lc3-assembler ]
         os: [ windows-latest, ubuntu-latest, macOS-latest ]
         rust:
           - stable
