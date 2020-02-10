@@ -2,21 +2,22 @@ use crate::lexer::Token;
 use crate::ir2_lines::{OperationTokens, Label, Line};
 
 pub struct UnvalidatedFile<'input> {
-    objects: Vec<UnvalidatedObject<'input>>,
-    ignored: Vec<Line<'input>>,
+    pub objects: Vec<UnvalidatedObject<'input>>,
+    pub ignored: Vec<Line<'input>>,
 }
 
 pub struct UnvalidatedObject<'input> {
-    operations: Vec<UnvalidatedLine<'input>>,
-    empty_lines: Vec<Line<'input>>,
-    hanging_labels: Vec<Line<'input>>,
-    invalid_lines: Vec<Line<'input>>,
+    pub operations: Vec<UnvalidatedLine<'input>>,
+    pub empty_lines: Vec<Line<'input>>,
+    pub hanging_labels: Vec<Line<'input>>,
+    pub invalid_lines: Vec<Line<'input>>,
 }
 
 pub struct UnvalidatedLine<'input> {
-    label: Option<Label<'input>>,
-    operation: OperationTokens<'input>,
-    whitespace: Vec<Token<'input>>,
-    comments: Vec<Token<'input>>,
-    newlines: Vec<Token<'input>>,
+    pub label: Option<Label<'input>>,
+    pub operation: OperationTokens<'input>,
+    pub whitespace: Vec<Token<'input>>,
+    pub comments: Vec<Token<'input>>,
+    pub newlines: Vec<Token<'input>>,
 }
+

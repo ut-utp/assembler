@@ -5,11 +5,16 @@ use std::iter::Iterator;
 use itertools::Itertools;
 use crate::ir2_lines::{Lines, Line, OperandTokens, LineContent, OperationTokens, Label};
 use crate::error::ParseError;
+use crate::ir3_unvalidated_objects::{UnvalidatedFile, UnvalidatedObject, UnvalidatedLine};
 //use crate::expanded;
 //
 //pub fn parse<'input>(lexer: &mut Lexer<'input>) -> expanded::File {
 //
 //}
+
+//////////
+// IR 1 //
+//////////
 
 fn parse_simple_lines<'input>(lexer: &mut Lexer<'input>) -> SimpleLines<'input> {
     let mut tokens = lexer.peekable();
@@ -42,6 +47,41 @@ fn parse_simple_line<'input>(tokens: &mut Peekable<&mut Lexer<'input>>) -> Simpl
     };
     SimpleLine { content, comment, newline }
 }
+
+#[cfg(test)]
+mod ir1_tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_parse_simple_lines_no_newline() {
+        let mut lexer = Lexer::new("ADD");
+        let simple_lines = parse_simple_lines(&mut lexer);
+        let SimpleLine { content, comment, newline } = simple_lines.get(0).unwrap();
+        assert_eq!(content.len(), 1);
+        assert!(comment.is_none());
+        assert!(newline.is_none());
+    }
+
+    #[test]
+    fn test_parse_simple_lines_two_lines() {
+        let mut lexer = Lexer::new("ADD ; test\n.END");
+        let simple_lines = parse_simple_lines(&mut lexer);
+        let SimpleLine { content, comment, newline } = simple_lines.get(0).unwrap();
+        assert_eq!(content.len(), 2);
+        assert!(comment.is_some());
+        assert!(newline.is_some());
+
+        let SimpleLine { content, comment, newline } = simple_lines.get(1).unwrap();
+        assert_eq!(content.len(), 1);
+        assert!(comment.is_none());
+        assert!(newline.is_none());
+    }
+}
+
+//////////
+// IR 2 //
+//////////
 
 fn parse_lines<'input>(simple_lines: &'input SimpleLines<'input>) -> Lines<'input> {
     simple_lines.iter()
@@ -192,7 +232,7 @@ where T: Iterator<Item=&'input Token<'input>>
                 let mut separators = Vec::new();
                 let operands = parse_operand_tokens(op, tokens, &mut separators)?;
                 skip_and_collect_whitespace(&mut tokens, &mut whitespace);
-                if let Some(_) = tokens.peek() {
+                if tokens.peek().is_some() {
                     Err(ParseError("Extra tokens at end of line.".to_string()))
                 } else {
                     Ok(Some(OperationTokens { operator, operands, separators }))
@@ -260,35 +300,9 @@ fn parse_separator<'input, T>(tokens: &mut Peekable<T>) -> Result<Vec<Token<'inp
 }
 
 #[cfg(test)]
-mod tests {
+mod ir2_tests {
     use super::*;
-
     use pretty_assertions::assert_eq;
-
-    #[test]
-    fn test_parse_simple_lines_no_newline() {
-        let mut lexer = Lexer::new("ADD");
-        let simple_lines = parse_simple_lines(&mut lexer);
-        let SimpleLine { content, comment, newline } = simple_lines.get(0).unwrap();
-        assert_eq!(content.len(), 1);
-        assert!(comment.is_none());
-        assert!(newline.is_none());
-    }
-
-    #[test]
-    fn test_parse_simple_lines_two_lines() {
-        let mut lexer = Lexer::new("ADD ; test\n.END");
-        let simple_lines = parse_simple_lines(&mut lexer);
-        let SimpleLine { content, comment, newline } = simple_lines.get(0).unwrap();
-        assert_eq!(content.len(), 2);
-        assert!(comment.is_some());
-        assert!(newline.is_some());
-
-        let SimpleLine { content, comment, newline } = simple_lines.get(1).unwrap();
-        assert_eq!(content.len(), 1);
-        assert!(comment.is_none());
-        assert!(newline.is_none());
-    }
 
     #[test]
     fn test_parse_lines_add() {
@@ -321,7 +335,7 @@ mod tests {
         let Line { content, whitespace, comment, newline } = lines.get(1).unwrap();
         println!("{:?}", content);
         let line_1_matches = if let LineContent::Valid(None, Some(operation_tokens)) = content {
-            if let OperationTokens { operator, operands, separators } = operation_tokens {
+            if let OperationTokens { operands, .. } = operation_tokens {
                 if let OperandTokens::Add { .. } = operands {
                     true
                 } else { false }
@@ -329,4 +343,116 @@ mod tests {
         } else { false };
         assert!(line_1_matches);
     }
+    
+}
+
+//////////
+// IR 3 //
+//////////
+
+fn parse_unvalidated_file<'input>(lines: &'input Lines<'input>) -> UnvalidatedFile<'input> {
+    let mut objects = Vec::new();
+    let mut ignored = Vec::new();
+    let mut lines = lines.iter().peekable();
+    loop {
+        let line = lines.peek();
+        match line {
+            None => { break; }
+            Some( // Ridiculous indentation engage... (We're just matching .ORIG)
+                Line {
+                    content: LineContent::Valid(_, Some(
+                        OperationTokens {
+                            operands: OperandTokens::Orig { .. }, // <- This is the important part.
+                            ..
+                        }
+                    )),
+                    ..
+                }
+            ) => { // Re-engaging readability stabilizers...
+                let object = parse_unvalidated_object(&mut lines);
+                if let Ok(object) = object {
+                    objects.push(object);
+                }
+            },
+            Some(_) => { ignored.push(lines.next().unwrap().clone()); },
+        }
+    }
+    UnvalidatedFile { objects, ignored }
+}
+
+fn parse_unvalidated_object<'input, T>(lines: &mut Peekable<T>) -> Result<UnvalidatedObject<'input>, ParseError>
+    where T: Iterator<Item=&'input Line<'input>>
+{
+    let mut operations = Vec::new();
+    let mut empty_lines = Vec::new();
+    let mut hanging_labels = Vec::new();
+    let mut invalid_lines = Vec::new();
+    
+    loop {
+        let line = lines.next().ok_or(ParseError("Hit end of file before .END".to_string()))?;
+        
+        let mut whitespace = Vec::new();
+        whitespace.extend(line.whitespace.clone());
+        
+        let mut comments = Vec::new();
+        if let Some(comment) = line.comment {
+            comments.push(comment.clone());
+        }
+        
+        let mut newlines = Vec::new();
+        if let Some(newline) = line.newline {
+            newlines.push(newline.clone());
+        }
+        
+        match &line.content {
+            LineContent::Invalid(_) => { invalid_lines.push(line.clone()); }
+            LineContent::Valid(None, None) => { empty_lines.push(line.clone()); },
+            LineContent::Valid(label, None) => {
+                if let Some(Line { 
+                    content: LineContent::Valid(None, Some(operation)),
+                    whitespace: line_ws, 
+                    comment,
+                    newline,
+                }) = lines.peek() {
+                    lines.next();
+                    
+                    whitespace.extend(line_ws);
+                    if let Some(comment) = comment {
+                        comments.push(comment.clone());
+                    }
+                    if let Some(newline) = newline {
+                        newlines.push(newline.clone());
+                    }
+                    let unvalidated_line = UnvalidatedLine {
+                        label: label.clone(),
+                        operation: operation.clone(),
+                        whitespace,
+                        comments,
+                        newlines,
+                    };
+                    operations.push(unvalidated_line);
+                    if let OperationTokens { operands: OperandTokens::End, .. } = operation {
+                        break;
+                    }
+                } else {
+                    hanging_labels.push(line.clone());
+                }
+            },
+            LineContent::Valid(label, Some(operation)) => {
+                let unvalidated_line = UnvalidatedLine {
+                    label: label.clone(),
+                    operation: operation.clone(),
+                    whitespace,
+                    comments,
+                    newlines,
+                };
+                operations.push(unvalidated_line);
+                if let OperationTokens { operands: OperandTokens::End, .. } = operation {
+                    break;
+                }
+            },
+        }
+    }
+    
+    Ok(UnvalidatedObject { operations, empty_lines, hanging_labels, invalid_lines })
 }
