@@ -48,7 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        crate: [ lc3-baseline-sim ]
+        crate: [ lc3-assembler ]
         os: [ ubuntu-latest ]
         rust: [ stable, nightly ]
 
