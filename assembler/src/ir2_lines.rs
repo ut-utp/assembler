@@ -29,7 +29,7 @@ pub struct OperationTokens<'input> {
 pub enum OperandTokens<'input> {
     Add { dr: Token<'input>, sr1: Token<'input>, sr2_or_imm5: Token<'input> },
     And { dr: Token<'input>, sr1: Token<'input>, sr2_or_imm5: Token<'input> },
-    Br { nzp: Token<'input>, label: Label<'input> },
+    Br { nzp: Token<'input>, label: Label<'input> }, // TODO: make nzp Option<Token>
     Jmp { base: Token<'input> },
     Jsr { label: Label<'input> },
     Jsrr { base: Token<'input> },

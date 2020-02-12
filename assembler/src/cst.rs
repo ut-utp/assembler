@@ -4,19 +4,19 @@ use crate::lexer::Token;
 use crate::ir2_lines::Line;
 
 pub struct File<'input> {
-    objects: Vec<Object<'input>>,
-    ignored: Vec<Token<'input>>,
+    pub objects: Vec<Object<'input>>,
+    pub ignored: Vec<Line<'input>>,
 }
 
 pub struct Object<'input> {
-    operations: Vec<Operation<'input>>,
-    empty_lines: Vec<Line<'input>>,
-    hanging_labels: Vec<Line<'input>>,
-    invalid_lines: Vec<Line<'input>>,
+    pub operations: Vec<Operation<'input>>,
+    pub empty_lines: Vec<Line<'input>>,
+    pub hanging_labels: Vec<Line<'input>>,
+    pub invalid_lines: Vec<Line<'input>>,
 }
 
-type Label<'input> = Checked<'input, &'input str>;
-type Separator<'input> = Token<'input>;
+pub type Label<'input> = Checked<'input, &'input str>;
+pub type Separator<'input> = Token<'input>;
 
 // Different from lc3_isa::Instruction in that offsets from labels aren't computed.
 // Also covers pseudo-ops.
@@ -45,15 +45,15 @@ pub enum Sr2OrImm5<'input> {
 }
 
 pub struct ConditionCodes {
-    n: bool,
-    z: bool,
-    p: bool,
+    pub n: bool,
+    pub z: bool,
+    pub p: bool,
 }
 
 pub enum Operands<'input> {
-    Add { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Sr2OrImm5<'input> },
-    And { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Sr2OrImm5<'input> },
-    Br { nzp: Checked<'input, ConditionCodes>, label: Label<'input> },
+    Add { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Result<Sr2OrImm5<'input>, ParseError> },
+    And { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Result<Sr2OrImm5<'input>, ParseError> },
+    Br { nzp_src: Option<Token<'input>>, nzp: Result<ConditionCodes, ParseError>, label: Label<'input> },
     Jmp { base: Reg<'input> },
     Jsr { label: Label<'input> },
     Jsrr { base: Reg<'input> },
@@ -67,7 +67,7 @@ pub enum Operands<'input> {
     St { sr: Reg<'input>, label: Label<'input> },
     Sti { sr: Reg<'input>, label: Label<'input> },
     Str { sr: Reg<'input>, base: Reg<'input>, offset6: Immediate<'input, SignedWord> },
-    Trap { trapvec: u8 },
+    Trap { trap_vec: Immediate<'input, u8> },
 
     Getc,
     Out,
@@ -78,7 +78,7 @@ pub enum Operands<'input> {
 
     Orig { origin: Immediate<'input, Addr> },
     Fill { value: Immediate<'input, SignedWord> },
-    Blkw { size_src: Token<'input>, size: Addr }, // Addr used here to signify a number of locations. Max is number of possible Addrs.
+    Blkw { size_src: Token<'input>, size: Immediate<'input, Addr> }, // Addr used here to signify a number of locations. Max is number of possible Addrs.
     Stringz { string: Token<'input> },
     End,
 }

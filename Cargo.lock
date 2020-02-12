@@ -19,6 +19,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "autocfg"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8aac770f1885fd7e387acedd76065302551364496e46b3dd00860b2f8359b9d"
+
+[[package]]
 name = "ctor"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -61,6 +67,7 @@ version = "0.1.0"
 dependencies = [
  "itertools",
  "lc3-isa",
+ "num-traits",
  "pretty_assertions",
  "regex",
 ]
@@ -68,7 +75,7 @@ dependencies = [
 [[package]]
 name = "lc3-isa"
 version = "0.1.0"
-source = "git+https://github.com/ut-utp/prototype#4f3801527893ff4a8556244b20295daff31ef13c"
+source = "git+https://github.com/ut-utp/prototype#bcb1a8fcd15cfb24648ca61256d58230838ca46c"
 dependencies = [
  "lc3-macros",
  "serde",
@@ -78,7 +85,7 @@ dependencies = [
 [[package]]
 name = "lc3-macros"
 version = "0.1.0"
-source = "git+https://github.com/ut-utp/prototype#4f3801527893ff4a8556244b20295daff31ef13c"
+source = "git+https://github.com/ut-utp/prototype#bcb1a8fcd15cfb24648ca61256d58230838ca46c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -90,6 +97,15 @@ name = "memchr"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3197e20c7edb283f87c071ddfc7a2cca8f8e0b888c242959846a6fce03c72223"
+
+[[package]]
+name = "num-traits"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c62be47e61d1842b9170f0fdeec8eba98e60e90e5446449a0545e5152acd7096"
+dependencies = [
+ "autocfg",
+]
 
 [[package]]
 name = "output_vt100"
