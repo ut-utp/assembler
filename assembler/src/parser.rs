@@ -7,7 +7,7 @@ use crate::ir2_lines::{Lines, Line, OperandTokens, LineContent, OperationTokens,
 use crate::error::ParseError;
 use crate::ir3_unvalidated_objects::{UnvalidatedFile, UnvalidatedObject, UnvalidatedLine};
 use crate::cst::{Reg, Checked, Immediate, ConditionCodes, File, Object, Operands, Sr2OrImm5, Operation};
-use lc3_isa::{SignedWord, check_signed_imm};
+use lc3_isa::{SignedWord, check_signed_imm, Addr};
 use std::convert::{TryInto, TryFrom};
 use num_traits::Num;
 use crate::cst;
@@ -592,7 +592,7 @@ fn validate_operand_tokens(operands: OperandTokens) -> Operands {
 
         OperandTokens::Orig { origin } => Operands::Orig { origin: validate_numeric_immediate(origin) },
         OperandTokens::Fill { value } => Operands::Fill { value: validate_numeric_immediate(value) },
-        OperandTokens::Blkw { size } => Operands::Blkw { size_src: size, size: validate_numeric_immediate(size) }, // TODO: parse as decimal without prefix
+        OperandTokens::Blkw { size } => Operands::Blkw { size_src: size, size: validate_blkw_immediate(size) },
         OperandTokens::Stringz { string } => Operands::Stringz { string }, // TODO: validate ASCII?
         OperandTokens::End => Operands::End,
     }
@@ -700,4 +700,11 @@ fn validate_condition_codes_str(src: &str) -> Result<ConditionCodes, ParseError>
         }
     }
     Ok(ConditionCodes { n, z, p })
+}
+
+fn validate_blkw_immediate(src: Token) -> Immediate<Addr> {
+    Immediate {
+        src,
+        value: src.src.parse().map_err(|_| ParseError("Invalid BLKW immediate.".to_string()))
+    }
 }
