@@ -1,8 +1,6 @@
 use regex::Regex;
 use crate::error::LexError;
 
-// TODO: retain whitespace? Would make grammar unnecessarily complex, but may be necessary to fully recreate input
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Token<'input> {
     pub src: &'input str,

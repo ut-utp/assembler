@@ -173,6 +173,7 @@ macro_rules! fill_operands {
     };
 }
 
+
 fn parse_operand_tokens<'input, T>(op: Op, tokens: &mut Peekable<T>, mut separators: &mut Vec<Token<'input>>) -> Result<OperandTokens<'input>, ParseError>
     where T: Iterator<Item=&'input Token<'input>>
 {
@@ -181,7 +182,7 @@ fn parse_operand_tokens<'input, T>(op: Op, tokens: &mut Peekable<T>, mut separat
             Opcode::Add => { fill_operands! { 3; Add { dr, sr1, sr2_or_imm5, }; tokens, separators } },
             Opcode::And => { fill_operands! { 3; And { dr, sr1, sr2_or_imm5, }; tokens, separators } },
             Opcode::Br => { // Specially handled due to nzp
-                let nzp = parse_ambiguous(tokens)?;
+                let nzp = parse_nzp(tokens)?;
                 let whitespace = parse_whitespace(tokens)?;
                 separators.extend(whitespace);
                 let label = parse_ambiguous(tokens)?;
@@ -249,6 +250,22 @@ where T: Iterator<Item=&'input Token<'input>>
             _ => Err(ParseError("Unexpected non-operator token at beginning of 'instruction'".to_string()))
         }
         None => Ok(None),
+    }
+}
+
+fn parse_nzp<'input, T>(tokens: &mut Peekable<T>) -> Result<Option<Token<'input>>, ParseError>
+    where T: Iterator<Item=&'input Token<'input>>
+{
+    match tokens.peek() {
+        Some(&token) => match token.ty {
+            TokenType::Ambiguous => {
+                tokens.next();
+                Ok(Some(token.clone()))
+            },
+            TokenType::Whitespace => Ok(None),
+            _ => Err(ParseError("Found non-nzp token while parsing nzp.".to_string()))
+        },
+        None => Err(ParseError("Ran out of tokens while parsing nzp.".to_string())),
     }
 }
 
@@ -534,7 +551,7 @@ fn validate_operand_tokens(operands: OperandTokens) -> Operands {
                 sr2_or_imm5: validate_sr2_or_imm5(sr2_or_imm5)
             },
         OperandTokens::Br { nzp, label } => {
-            let (nzp_src, nzp) = validate_condition_codes(Some(nzp));
+            let (nzp_src, nzp) = validate_condition_codes(nzp);
             Operands::Br {
                 nzp_src,
                 nzp,
@@ -635,7 +652,7 @@ fn validate_signed_immediate(src: Token, num_bits: u32) -> Immediate<SignedWord>
 fn validate_label(src: Token) -> cst::Label {
     let label = src.src;
 
-    let valid_length = 1 <= label.len() && label.len() <= 20;
+    let valid_length = (1..=20).contains(&label.len());
 
     let mut chars = label.chars();
     let first_char_alphabetic = chars.next().filter(|c| c.is_alphabetic()).is_some();
