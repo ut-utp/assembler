@@ -4,8 +4,10 @@ use lc3_isa::{Addr, SignedWord};
 use crate::cst::{Operation, Operands, Immediate};
 use lc3_isa::{Word};
 use crate::lexer::Opcode;
+use crate::error::{MemoryError, ParseError};
 
 pub type File<'input> = Vec<cst::Object<'input>>;
+
 
 pub struct Object_expanded<'input> {
     orig: Addr,
@@ -22,8 +24,8 @@ pub type Label<'input> = &'input str;
 pub type Instruction<'input> = Operation<'input>;
 
 
-fn assembler_pass_one(object: cst::Object) -> Object_expanded{
-    let mut expansion = Vec::<MemoryLocation>::new();
+fn assembler_pass_one(object: cst::Object) -> Result<bool, MemoryError> {
+    let mut expansion = Vec::<>::new();
     let mut orig_val = Object_expanded {
         orig: 0,
         memory_locations: vec![],
@@ -34,9 +36,11 @@ fn assembler_pass_one(object: cst::Object) -> Object_expanded{
     // };
     for i in object.operations {
         
+       
+
         match i.operands {
 
-            Operands::Orig{origin } => {
+            Operands::Orig{ origin } => {
                  orig_val = Object_expanded {
                     orig: origin.value.unwrap(),
                     memory_locations: vec![],
@@ -61,13 +65,84 @@ fn assembler_pass_one(object: cst::Object) -> Object_expanded{
             Operands::End {} => {
                 expansion.push(MemoryLocation::Instruction(i));
             },
-            _ => { expansion.push(MemoryLocation::Instruction(i)); }
-        }
+            _ => { 
+                //labels.push(i.label.unwrap().value);
+                expansion.push(MemoryLocation::Instruction(i)); 
+            
+            }
+        };
+        
 
-    }
+    };
      orig_val.memory_locations = expansion;
 
-    return orig_val;
+    return assembler_pass_two(orig_val);
+  
 
 
 }
+
+
+fn assembler_pass_two(instructions: Object_expanded) -> Result<bool, MemoryError> {
+    let origin = instructions.orig;
+    let mut memory = origin;
+    let mut labels = Vec::<Word>::new();
+    // let mut origin_placement = 0;
+    let mut orig_flag = 0;
+    for memory_locations in instructions.memory_locations{
+        match memory_locations {
+            MemoryLocation::Instruction(instruction) => {
+                match instruction.operands {
+                    Operands::End {} => {
+                        memory += 1; 
+                        break; 
+                    },
+                    _ => {
+                        if instruction.label.unwrap().value.unwrap() != "" {
+                            labels.push(memory);
+
+                        };
+                        memory += 1; 
+                        }
+                }
+            },
+            MemoryLocation::Value(value) => {
+                memory += 1; 
+            },
+             _ => {
+                // otherwise lone orig value
+                orig_flag = 1; 
+             }
+        };
+    }
+
+
+
+
+    if orig_flag == 1{
+        Err(MemoryError("Lone Origin value".to_string()))
+    } else {
+        Ok(memory < 2^16-1)
+    }
+}
+
+
+
+
+// fn assembler_pass_three(instructions: Object_expanded, object: cst::Object) {
+//     let check = assembler_pass_two(instructions);
+//     if check.unwrap() {
+//         let mut locations = Vec::<cst::Checked<Word>>::new();
+//         for i in object.operations{
+//             locations.push(i.label.unwrap().value.unwrap());
+//         };
+
+//     } else {
+
+
+
+//     }
+
+
+
+// }
