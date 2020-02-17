@@ -116,15 +116,6 @@ fn assembler_pass_two(instructions: Object_expanded) -> Result<Vec<Offset_values
                         };
                         offset_reliant.push(offset_val);
                     },
-                    // Operands::Ret => {
-                    //     memory += 1;
-
-
-                    // },
-                    // Operands::Rti => {
-                    //     memory += 1;
-
-                    // },
                     Operands::Jsr { label }  => {
                         memory += 1;
                         let offset_val = Label_values {
@@ -167,59 +158,18 @@ fn assembler_pass_two(instructions: Object_expanded) -> Result<Vec<Offset_values
             mem: offset_instructions.mem,
             offset: offset,
         };
-        offset_values.push(structure);
+        offset_values.push(structure); // holds the memory location to insert the offset at... 
     };
     
 
     if orig_flag == 1{
         Err(MemoryError("Lone Origin value".to_string()))
+    } else if memory > 2^16 - 1 {
+        Err(MemoryError("Out of memory".to_string()))
     } else {
         return Ok(offset_values);
-        //Ok(memory < 2^16-1)
-
     }
 }
 
-// fn assembler_pass_three(instructions: Object_expanded, labels: HashMap<&str, Word>) {
-//     let mut offsets = Vec::<Offset_values>::new();
-//     let mut pc = instructions.orig;
 
-//     for memory_locations in instructions.memory_locations{ 
-//         match memory_locations {
-//             MemoryLocation::Instruction(instruction) => {
-//                 match instruction.operands {
-//                     Operands::Br {nzp, nzp_src, label} => {
-//                         pc += 1;
-                        
-//                         let pc_value = labels.get(label.value.unwrap());
-//                         let offset = (pc - pc_value.unwrap()) as i16; 
-//                         let offset_val = Offset_values {
-//                             instruction: instruction,
-//                             offset: offset,
-//                         };
-                      
-//                     },
-//                     Operands::Ret => {
-//                         pc += 1;
-//                     },
-//                     Operands::Rti => {
-//                         pc += 1;
-                    
-//                     },
-//                     _ => {
-//                         pc += 1;
-//                     }
-                    
-//                 }
-//             },
-//             MemoryLocation::Value(value) => {
-        
-//             },
-           
-//         };
-//     };
-
-
-
-// }
 
