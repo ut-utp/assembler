@@ -50,6 +50,7 @@ pub struct ConditionCodes {
     pub p: bool,
 }
 
+
 pub enum Operands<'input> {
     Add { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Result<Sr2OrImm5<'input>, ParseError> },
     And { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Result<Sr2OrImm5<'input>, ParseError> },
