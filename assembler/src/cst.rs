@@ -2,7 +2,7 @@ use lc3_isa::{Addr, SignedWord, check_signed_imm};
 use crate::error::ParseError;
 use crate::lexer::Token;
 use crate::ir2_lines::{Line, OperationTokens, OperandTokens};
-use crate::ir3_unvalidated_objects::{UnvalidatedFile, UnvalidatedObject, UnvalidatedLine};
+use crate::ir3_unvalidated_objects::{UnvalidatedFile, UnvalidatedObject, UnvalidatedLine, UnvalidatedObjectContent};
 use crate::cst;
 use std::convert::TryInto;
 use num_traits::Num;
@@ -101,7 +101,7 @@ pub fn parse_cst<'a, 'input>(file: &'a UnvalidatedFile<'input>) -> File<'input> 
 }
 
 fn validate_object(object: UnvalidatedObject) -> Object {
-    let UnvalidatedObject { operations: mut old_operations, empty_lines, hanging_labels, invalid_lines } = object.clone();
+    let UnvalidatedObjectContent { operations: mut old_operations, empty_lines, hanging_labels, invalid_lines } = object.content.clone();
     let operations = old_operations.drain(..).map(validate_line).collect();
     Object { operations, empty_lines, hanging_labels, invalid_lines }
 }

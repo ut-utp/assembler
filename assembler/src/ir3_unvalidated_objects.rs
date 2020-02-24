@@ -1,6 +1,7 @@
 use crate::lexer::Token;
 use crate::ir2_lines::{OperationTokens, Label, Line, Lines, LineContent, OperandTokens};
 use std::iter::Peekable;
+use std::mem;
 
 #[derive(Clone)]
 pub struct UnvalidatedFile<'input> {
@@ -10,6 +11,13 @@ pub struct UnvalidatedFile<'input> {
 
 #[derive(Clone)]
 pub struct UnvalidatedObject<'input> {
+    pub origin_src: UnvalidatedLine<'input>,
+    pub origin: Token<'input>,
+    pub content: UnvalidatedObjectContent<'input>,
+}
+
+#[derive(Clone)]
+pub struct UnvalidatedObjectContent<'input> {
     pub operations: Vec<UnvalidatedLine<'input>>,
     pub empty_lines: Vec<Line<'input>>,
     pub hanging_labels: Vec<Line<'input>>,
@@ -25,35 +33,49 @@ pub struct UnvalidatedLine<'input> {
     pub newlines: Vec<Token<'input>>,
 }
 
-pub fn parse_unvalidated_file<'input>(lines: &'input Lines<'input>) -> UnvalidatedFile<'input> {
+pub fn parse_unvalidated_file(lines: Lines) -> UnvalidatedFile {
     let mut objects = Vec::new();
     let mut ignored = Vec::new();
-    let mut lines = lines.iter().peekable();
+    let mut lines = lines.into_iter().peekable();
     loop {
-        let line = lines.peek();
-        match line {
-            None => { break; }
-            Some( // Ridiculous indentation engage... (We're just matching .ORIG)
-                  Line {
-                      content: LineContent::Valid(_, Some(
-                          OperationTokens {
-                              operands: OperandTokens::Orig { .. }, // <- This is the important part.
-                              ..
-                          }
-                      )),
-                      ..
-                  }
-            ) => { // Re-engaging readability stabilizers...
-                let object = parse_unvalidated_object(&mut lines);
-                match object {
-                    Ok(object) => { objects.push(object); },
-                    Err(ObjectParseError { lines_seen, ..}) => { ignored.extend(lines_seen) },
+        let maybe_line = lines.next();
+        match maybe_line {
+            None => { break; },
+            Some(line) => {
+                let line_backup = line.clone();
+                match line {
+                    Line {
+                        content: LineContent::Valid(label, Some(operation)),
+                        whitespace, comment, newline
+                    } => {
+                        if let OperationTokens { operands: OperandTokens::Orig { origin }, .. } = operation {
+                            let mut comments = Vec::new();
+                            if let Some(comment) = comment {
+                                comments.push(comment);
+                            }
+
+                            let mut newlines = Vec::new();
+                            if let Some(newline) = newline {
+                                newlines.push(newline);
+                            }
+                            let origin_src = UnvalidatedLine { label, operation, whitespace, comments, newlines };
+                            match parse_unvalidated_object_content(&mut lines) {
+                                Ok(content) => { objects.push(UnvalidatedObject { origin_src, origin, content }); },
+                                Err(ObjectParseError { lines_seen, .. }) => {
+                                    ignored.push(line_backup);
+                                    ignored.extend(lines_seen);
+                                },
+                            }
+                        } else {
+                            ignored.push(line_backup);
+                        }
+                    },
+                    line => {
+                        ignored.push(line);
+                    }
                 }
-            },
-            Some(&line) => {
-                ignored.push(line.clone());
-                lines.next();
-            },
+
+            }
         }
     }
     UnvalidatedFile { objects, ignored }
@@ -64,8 +86,8 @@ struct ObjectParseError<'input> {
     lines_seen: Vec<Line<'input>>,
 }
 
-fn parse_unvalidated_object<'input, T>(lines: &mut Peekable<T>) -> Result<UnvalidatedObject<'input>, ObjectParseError<'input>>
-    where T: Iterator<Item=&'input Line<'input>>
+fn parse_unvalidated_object_content<'input, T>(lines: &mut Peekable<T>) -> Result<UnvalidatedObjectContent<'input>, ObjectParseError<'input>>
+    where T: Iterator<Item=Line<'input>>
 {
     let mut operations = Vec::new();
     let mut empty_lines = Vec::new();
@@ -73,77 +95,71 @@ fn parse_unvalidated_object<'input, T>(lines: &mut Peekable<T>) -> Result<Unvali
     let mut invalid_lines = Vec::new();
 
     let mut lines_seen = Vec::new();
+    let mut found_end = false;
+
+    let mut hanging_label = None;
+    let mut whitespace = Vec::new();
+    let mut comments = Vec::new();
+    let mut newlines = Vec::new();
 
     loop {
-        let line = lines.next().ok_or(ObjectParseError {
-            message: "Hit end of file before .END".to_string(),
-            lines_seen: lines_seen.clone()
-        })?;
-        lines_seen.push(line.clone());
+        let maybe_line = lines.next();
+        match maybe_line {
+            None => { break; }
+            Some(line) => {
+                lines_seen.push(line.clone());
+                let line_backup = line.clone();
 
-        let mut whitespace = Vec::new();
-        whitespace.extend(line.whitespace.clone());
+                let Line { content, whitespace: line_whitespace, comment, newline } = line;
 
-        let mut comments = Vec::new();
-        if let Some(comment) = line.comment {
-            comments.push(comment.clone());
-        }
-
-        let mut newlines = Vec::new();
-        if let Some(newline) = line.newline {
-            newlines.push(newline.clone());
-        }
-
-        match &line.content {
-            LineContent::Invalid(_) => { invalid_lines.push(line.clone()); }
-            LineContent::Valid(None, None) => { empty_lines.push(line.clone()); },
-            LineContent::Valid(label, None) => {
-                if let Some(Line {
-                                content: LineContent::Valid(None, Some(operation)),
-                                whitespace: line_ws,
-                                comment,
-                                newline,
-                            }) = lines.peek() {
-                    lines.next();
-
-                    whitespace.extend(line_ws);
-                    if let Some(comment) = comment {
-                        comments.push(comment.clone());
+                if let Some(line) = &hanging_label {
+                    if let LineContent::Valid(None, Some(operation)) = &content {
+                    } else {
+                        hanging_labels.push(hanging_label.take().unwrap());
                     }
-                    if let Some(newline) = newline {
-                        newlines.push(newline.clone());
-                    }
-                    let unvalidated_line = UnvalidatedLine {
-                        label: label.clone(),
-                        operation: operation.clone(),
-                        whitespace,
-                        comments,
-                        newlines,
-                    };
-                    operations.push(unvalidated_line);
-                    if let OperationTokens { operands: OperandTokens::End, .. } = operation {
-                        break;
-                    }
-                } else {
-                    hanging_labels.push(line.clone());
                 }
-            },
-            LineContent::Valid(label, Some(operation)) => {
-                let unvalidated_line = UnvalidatedLine {
-                    label: label.clone(),
-                    operation: operation.clone(),
-                    whitespace,
-                    comments,
-                    newlines,
-                };
-                operations.push(unvalidated_line);
-                if let OperationTokens { operands: OperandTokens::End, .. } = operation {
-                    break;
+
+                match content {
+                    LineContent::Invalid(_) => { invalid_lines.push(line_backup); }
+                    LineContent::Valid(None, None) => { empty_lines.push(line_backup); },
+                    LineContent::Valid(Some(label), None) => { hanging_label = Some(line_backup); },
+                    LineContent::Valid(label, Some(operation)) => {
+                        if let &Some(line) = &hanging_label {
+
+                        }
+                        whitespace.extend(line_whitespace);
+                        if let Some(comment) = comment { comments.push(comment); }
+                        if let Some(newline) = newline { newlines.push(newline); }
+                        let finished_whitespace = mem::replace(&mut whitespace, Vec::new());
+                        let finished_comments = mem::replace(&mut comments, Vec::new());
+                        let finished_newlines = mem::replace(&mut newlines, Vec::new());
+                        if let OperationTokens { operands: OperandTokens::End, .. } = operation {
+                            found_end = true;
+                        }
+                        let unvalidated_line = UnvalidatedLine {
+                            label,
+                            operation,
+                            whitespace: finished_whitespace,
+                            comments: finished_comments,
+                            newlines: finished_newlines,
+                        };
+                        operations.push(unvalidated_line);
+                        if found_end {
+                            break;
+                        }
+                    },
                 }
-            },
+            }
         }
     }
 
-    Ok(UnvalidatedObject { operations, empty_lines, hanging_labels, invalid_lines })
+    if found_end {
+        Ok(UnvalidatedObjectContent { operations, empty_lines, hanging_labels, invalid_lines })
+    } else {
+        Err(ObjectParseError {
+            message: "Hit end of file before .END".to_string(),
+            lines_seen
+        })
+    }
 }
 
