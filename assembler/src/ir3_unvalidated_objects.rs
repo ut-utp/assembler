@@ -124,9 +124,27 @@ fn parse_unvalidated_object_content<'input, T>(lines: &mut Peekable<T>) -> Resul
                     LineContent::Valid(None, None) => { empty_lines.push(line_backup); },
                     LineContent::Valid(Some(label), None) => { hanging_label = Some(line_backup); },
                     LineContent::Valid(label, Some(operation)) => {
-                        if let &Some(line) = &hanging_label {
-
-                        }
+                        let label = if let Some(line) = &hanging_label {
+                            assert!(label.is_none());
+                            let Line { 
+                                content: label_content,
+                                whitespace: label_whitespace, 
+                                comment: label_comment, 
+                                newline: label_newline
+                            } = hanging_label.take().unwrap();
+                            
+                            whitespace.extend(label_whitespace);
+                            if let Some(label_comment) = label_comment { comments.push(label_comment); }
+                            if let Some(label_newline) = label_newline { newlines.push(label_newline); }
+                            if let LineContent::Valid(label, None) = label_content {
+                                label
+                            } else {
+                                unreachable!("Hanging label wasn't a line with only a label! Contact the maintainers.");
+                            }
+                        } else {
+                            label
+                        };
+                        
                         whitespace.extend(line_whitespace);
                         if let Some(comment) = comment { comments.push(comment); }
                         if let Some(newline) = newline { newlines.push(newline); }

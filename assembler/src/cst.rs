@@ -3,9 +3,9 @@ use crate::error::ParseError;
 use crate::lexer::Token;
 use crate::ir2_lines::{Line, OperationTokens, OperandTokens};
 use crate::ir3_unvalidated_objects::{UnvalidatedFile, UnvalidatedObject, UnvalidatedLine, UnvalidatedObjectContent};
-use crate::cst;
 use std::convert::TryInto;
 use num_traits::Num;
+use std::string::ToString;
 
 #[derive(Clone)]
 pub struct File<'input> {
@@ -60,6 +60,7 @@ pub struct ConditionCodes {
     pub p: bool,
 }
 
+#[derive(Clone)]
 pub enum Operands<'input> {
     Add { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Result<Sr2OrImm5<'input>, ParseError> },
     And { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Result<Sr2OrImm5<'input>, ParseError> },
@@ -242,7 +243,7 @@ fn validate_signed_immediate(src: Token, num_bits: u32) -> Immediate<SignedWord>
     Immediate { src, value }
 }
 
-fn validate_label(src: Token) -> cst::Label {
+fn validate_label(src: Token) -> Label {
     let label = src.src;
 
     let valid_length = (1..=20).contains(&label.len());
@@ -258,7 +259,7 @@ fn validate_label(src: Token) -> cst::Label {
         Err(ParseError("Invalid label.".to_string()))
     };
 
-    cst::Label { src, value }
+    Label { src, value }
 }
 
 fn validate_condition_codes(src: Option<Token>) -> (Option<Token>, Result<ConditionCodes, ParseError>) {
