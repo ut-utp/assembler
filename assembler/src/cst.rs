@@ -15,6 +15,13 @@ pub struct File<'input> {
 
 #[derive(Clone)]
 pub struct Object<'input> {
+    pub origin_src: Operation<'input>,
+    pub origin: Immediate<'input, Addr>,
+    pub content: ObjectContent<'input>,
+}
+
+#[derive(Clone)]
+pub struct ObjectContent<'input> {
     pub operations: Vec<Operation<'input>>,
     pub empty_lines: Vec<Line<'input>>,
     pub hanging_labels: Vec<Line<'input>>,
@@ -94,16 +101,27 @@ pub enum Operands<'input> {
     End,
 }
 
-pub fn parse_cst<'a, 'input>(file: &'a UnvalidatedFile<'input>) -> File<'input> {
-    let UnvalidatedFile { objects: mut old_objects, ignored } = file.clone();
-    let objects = old_objects.drain(..).map(validate_object).collect();
-    File { objects, ignored }
+pub fn parse_cst(file: UnvalidatedFile) -> File {
+    let UnvalidatedFile { objects, ignored } = file;
+    File { 
+        objects: objects.into_iter().map(validate_object).collect(), 
+        ignored
+    }
 }
 
 fn validate_object(object: UnvalidatedObject) -> Object {
-    let UnvalidatedObjectContent { operations: mut old_operations, empty_lines, hanging_labels, invalid_lines } = object.content.clone();
-    let operations = old_operations.drain(..).map(validate_line).collect();
-    Object { operations, empty_lines, hanging_labels, invalid_lines }
+    let UnvalidatedObject { origin_src, origin, content } = object;
+    let UnvalidatedObjectContent { operations, empty_lines, hanging_labels, invalid_lines } = content;
+    Object { 
+        origin_src: validate_line(origin_src),
+        origin: validate_numeric_immediate(origin),
+        content: ObjectContent {
+            operations: operations.into_iter().map(validate_line).collect(),
+            empty_lines,
+            hanging_labels,
+            invalid_lines
+        }
+    }
 }
 
 fn validate_line(line: UnvalidatedLine) -> Operation {

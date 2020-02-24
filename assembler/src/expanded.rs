@@ -52,7 +52,7 @@ fn assembler_pass_one(objects: Vec<cst::Object>) -> Result<Vec<Offset_values>, M
             orig: 0,
             memory_locations: vec![],
             };
-    for i in object.operations {
+    for i in object.content.operations {
         match i.operands {
             Operands::Orig{ origin } => {
                  orig_val = Object_expanded {
