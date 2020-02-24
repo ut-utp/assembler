@@ -40,6 +40,8 @@ itertools = "0.8.2"
 num-traits = "0.2.11"
 lc3-isa = { git = "https://github.com/ut-utp/prototype", branch = "master", version = "0.1.0", default-features = false }
 # TODO: ^ eventually don't pull this from git
+lc3-shims = { git = "https://github.com/ut-utp/prototype", branch = "master", version = "0.1.0", default-features = false }
+# TODO: ^ or this
 
 [dev-dependencies]
 pretty_assertions = "0.6.1"
