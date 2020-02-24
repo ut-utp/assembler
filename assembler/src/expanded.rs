@@ -23,8 +23,8 @@ pub enum OpOrValue<'input> {
 }
 
 pub struct CompleteObject {
-    orig: Addr,
-    insns_or_values: Vec<InsnOrValue>,
+    pub orig: Addr,
+    pub insns_or_values: Vec<InsnOrValue>,
 }
 
 pub enum InsnOrValue {
@@ -64,7 +64,7 @@ pub fn expand_pseudo_ops(object: cst::Object) -> Object {
     Object { orig, ops_or_values }
 }
 
-fn build_symbol_table<'input>(object: &Object<'input>) -> Result<HashMap<&'input str, Addr>, MemoryError> {
+pub fn build_symbol_table<'input>(object: &Object<'input>) -> Result<HashMap<&'input str, Addr>, MemoryError> {
     let mut symbol_table = HashMap::new();
     let mut current_location = object.orig;
     for op_or_value in object.ops_or_values.iter() {
@@ -79,7 +79,7 @@ fn build_symbol_table<'input>(object: &Object<'input>) -> Result<HashMap<&'input
     Ok(symbol_table)
 }
 
-fn validate_placement(objects: &Vec<Object>) -> Result<(), MemoryError> {
+pub fn validate_placement(objects: &Vec<Object>) -> Result<(), MemoryError> {
     let starts_and_ends = objects.iter().map(get_start_and_end);
     for ((_, prev_end), (next_start, _)) in starts_and_ends.tuple_windows() {
         if prev_end > next_start {
@@ -95,7 +95,7 @@ fn get_start_and_end(object: &Object) -> (Addr, Addr) {
     (start, end)
 }
 
-fn construct_instructions(object: Object, symbol_table: HashMap<&str, Addr>) -> CompleteObject {
+pub fn construct_instructions(object: Object, symbol_table: HashMap<&str, Addr>) -> CompleteObject {
     let orig = object.orig;
     let mut current_location = object.orig;
     let mut insns_or_values = Vec::new();
