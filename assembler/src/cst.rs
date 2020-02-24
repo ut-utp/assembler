@@ -7,20 +7,20 @@ use std::convert::TryInto;
 use num_traits::Num;
 use std::string::ToString;
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct File<'input> {
     pub objects: Vec<Object<'input>>,
     pub ignored: Vec<Line<'input>>,
 }
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct Object<'input> {
     pub origin_src: Operation<'input>,
     pub origin: Immediate<'input, Addr>,
     pub content: ObjectContent<'input>,
 }
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct ObjectContent<'input> {
     pub operations: Vec<Operation<'input>>,
     pub empty_lines: Vec<Line<'input>>,
@@ -33,7 +33,7 @@ pub type Separator<'input> = Token<'input>;
 
 // Different from lc3_isa::Instruction in that offsets from labels aren't computed.
 // Also covers pseudo-ops.
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct Operation<'input> {
     pub label: Option<Label<'input>>,
     pub operator: Token<'input>,
@@ -45,7 +45,7 @@ pub struct Operation<'input> {
     pub newlines: Vec<Token<'input>>,
 }
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct Checked<'input, T> {
     pub src: Token<'input>,
     pub value: Result<T, ParseError>,
@@ -54,20 +54,20 @@ pub struct Checked<'input, T> {
 pub type Reg<'input> = Checked<'input, lc3_isa::Reg>;
 pub type Immediate<'input, T> = Checked<'input, T>;
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub enum Sr2OrImm5<'input> {
     Sr2(Reg<'input>),
     Imm5(Immediate<'input, SignedWord>),
 }
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct ConditionCodes {
     pub n: bool,
     pub z: bool,
     pub p: bool,
 }
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub enum Operands<'input> {
     Add { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Result<Sr2OrImm5<'input>, ParseError> },
     And { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Result<Sr2OrImm5<'input>, ParseError> },

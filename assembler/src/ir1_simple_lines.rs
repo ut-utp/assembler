@@ -43,13 +43,13 @@ fn parse_simple_line<'input>(tokens: &mut Peekable<Lexer<'input>>) -> SimpleLine
 }
 
 #[cfg(test)]
-mod ir1_tests {
+mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn test_parse_simple_lines_no_newline() {
-        let mut lexer = Lexer::new("ADD");
+    fn no_newline() {
+        let lexer = Lexer::new("ADD");
         let simple_lines = parse_simple_lines(lexer);
         let SimpleLine { content, comment, newline } = simple_lines.get(0).unwrap();
         assert_eq!(content.len(), 1);
@@ -58,8 +58,8 @@ mod ir1_tests {
     }
 
     #[test]
-    fn test_parse_simple_lines_two_lines() {
-        let mut lexer = Lexer::new("ADD ; test\n.END");
+    fn two_lines() {
+        let lexer = Lexer::new("ADD ; test\n.END");
         let simple_lines = parse_simple_lines(lexer);
         let SimpleLine { content, comment, newline } = simple_lines.get(0).unwrap();
         assert_eq!(content.len(), 2);

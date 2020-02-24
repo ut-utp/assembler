@@ -1,5 +1,4 @@
 use regex::Regex;
-use crate::error::LexError;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Token<'input> {
@@ -201,8 +200,6 @@ impl<'input> Iterator for Lexer<'input> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_simple() { // TODO: actually assert some stuff

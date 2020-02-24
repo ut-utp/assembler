@@ -1,11 +1,10 @@
 // For expanded pseudo-op structures
 use crate::cst;
-use crate::cst::{Immediate, Operands, Operation};
-use crate::error::{MemoryError, ParseError};
-use crate::lexer::Opcode;
+use crate::cst::Operands;
+use crate::error::MemoryError;
 use lc3_isa;
 use lc3_isa::Word;
-use lc3_isa::{Addr, Instruction, Reg, SignedWord};
+use lc3_isa::{Addr, Instruction};
 use std::collections::HashMap;
 
 pub type File<'input> = Vec<cst::Object<'input>>;
@@ -54,7 +53,7 @@ fn assembler_pass_one(objects: Vec<cst::Object>) -> Result<Vec<OffsetValues>, Me
                         memory_locations: vec![],
                     };
                 }
-                Operands::Blkw { size_src, size } => {
+                Operands::Blkw { size, .. } => {
                     let mut count = 0;
                     let val = size.value.unwrap();
                     while count < val {
@@ -99,11 +98,7 @@ fn assembler_pass_two(object_vec: Vec<Object>) -> Result<Vec<OffsetValues>, Memo
             match memory_locations {
                 MemoryLocation::Instruction(instruction_cst) => {
                     match instruction_cst.operands {
-                        Operands::Br {
-                            nzp,
-                            nzp_src,
-                            label,
-                        } => {
+                        Operands::Br { label, .. } => {
                             memory += 1;
                             let offset_val = LabelValues {
                                 label: label.value.unwrap(),
@@ -119,7 +114,7 @@ fn assembler_pass_two(object_vec: Vec<Object>) -> Result<Vec<OffsetValues>, Memo
                             };
                             offset_reliant.push(offset_val);
                         }
-                        Operands::Ld { dr, label } => {
+                        Operands::Ld { label, .. } => {
                             memory += 1;
                             let offset_val = LabelValues {
                                 label: label.value.unwrap(),
@@ -127,7 +122,7 @@ fn assembler_pass_two(object_vec: Vec<Object>) -> Result<Vec<OffsetValues>, Memo
                             };
                             offset_reliant.push(offset_val);
                         }
-                        Operands::Ldi { dr, label } => {
+                        Operands::Ldi { label, .. } => {
                             memory += 1;
                             let offset_val = LabelValues {
                                 label: label.value.unwrap(),
@@ -135,7 +130,7 @@ fn assembler_pass_two(object_vec: Vec<Object>) -> Result<Vec<OffsetValues>, Memo
                             };
                             offset_reliant.push(offset_val);
                         }
-                        Operands::Lea { dr, label } => {
+                        Operands::Lea { label, .. } => {
                             memory += 1;
                             let offset_val = LabelValues {
                                 label: label.value.unwrap(),
@@ -143,7 +138,7 @@ fn assembler_pass_two(object_vec: Vec<Object>) -> Result<Vec<OffsetValues>, Memo
                             };
                             offset_reliant.push(offset_val);
                         }
-                        Operands::St { sr, label } => {
+                        Operands::St { label, .. } => {
                             memory += 1;
                             let offset_val = LabelValues {
                                 label: label.value.unwrap(),
@@ -151,7 +146,7 @@ fn assembler_pass_two(object_vec: Vec<Object>) -> Result<Vec<OffsetValues>, Memo
                             };
                             offset_reliant.push(offset_val);
                         }
-                        Operands::Sti { sr, label } => {
+                        Operands::Sti { label, .. } => {
                             memory += 1;
                             let offset_val = LabelValues {
                                 label: label.value.unwrap(),
@@ -160,10 +155,7 @@ fn assembler_pass_two(object_vec: Vec<Object>) -> Result<Vec<OffsetValues>, Memo
                             offset_reliant.push(offset_val);
                         }
 
-                        Operands::End {} => {
-                            memory += 1;
-                            break;
-                        }
+                        Operands::End {} => { break; }
                         _ => {
                             memory += 1;
                             if let Some(label) = instruction_cst.label {
@@ -173,12 +165,8 @@ fn assembler_pass_two(object_vec: Vec<Object>) -> Result<Vec<OffsetValues>, Memo
                         }
                     }
                 }
-                MemoryLocation::Value(value) => {
+                MemoryLocation::Value(_) => {
                     memory += 1;
-                }
-                _ => {
-                    // otherwise lone orig value
-                    // orig_flag = 1;
                 }
             };
         }
@@ -260,14 +248,14 @@ fn assembly_pass_three(
                                 ));
                             }
                         },
-                        Operands::Ld { dr, label } => {
+                        Operands::Ld { dr, .. } => {
                             let my_offset = offsets[offset_counter].offset;
                             offset_counter += 1;
                             isa_instruction_csts.push(IsaInstructions::Instruction(
                                 Instruction::new_ld(dr.value.unwrap(), my_offset),
                             ));
                         }
-                        Operands::Ldi { dr, label } => {
+                        Operands::Ldi { dr, .. } => {
                             let my_offset = offsets[offset_counter].offset;
                             offset_counter += 1;
                             isa_instruction_csts.push(IsaInstructions::Instruction(
@@ -283,7 +271,7 @@ fn assembly_pass_three(
                                 ),
                             ));
                         }
-                        Operands::Lea { dr, label } => {
+                        Operands::Lea { dr, .. } => {
                             let my_offset = offsets[offset_counter].offset;
                             offset_counter += 1;
                             isa_instruction_csts.push(IsaInstructions::Instruction(
@@ -291,7 +279,7 @@ fn assembly_pass_three(
                             ));
                         }
 
-                        Operands::St { sr, label } => {
+                        Operands::St { sr, .. } => {
                             let my_offset = offsets[offset_counter].offset;
                             offset_counter += 1;
                             isa_instruction_csts.push(IsaInstructions::Instruction(
@@ -299,7 +287,7 @@ fn assembly_pass_three(
                             ));
                         }
 
-                        Operands::Sti { sr, label } => {
+                        Operands::Sti { sr, .. } => {
                             let my_offset = offsets[offset_counter].offset;
                             offset_counter += 1;
                             isa_instruction_csts.push(IsaInstructions::Instruction(
@@ -323,11 +311,7 @@ fn assembly_pass_three(
                             ));
                         }
 
-                        Operands::Br {
-                            nzp_src,
-                            nzp,
-                            label,
-                        } => {
+                        Operands::Br { nzp, .. } => {
                             let my_offset = offsets[offset_counter].offset;
                             offset_counter += 1;
                             let condition_codes = nzp.unwrap();
@@ -347,7 +331,7 @@ fn assembly_pass_three(
                             ));
                         }
 
-                        Operands::Jsr { label } => {
+                        Operands::Jsr { .. } => {
                             let my_offset = offsets[offset_counter].offset;
                             offset_counter += 1;
                             isa_instruction_csts.push(IsaInstructions::Instruction(
@@ -381,7 +365,6 @@ fn assembly_pass_three(
                 MemoryLocation::Value(value) => {
                     isa_instruction_csts.push(IsaInstructions::Value(value));
                 }
-                _ => {}
             }
         }
     }

@@ -19,10 +19,11 @@ mod tests {
     use crate::parser::parse;
 
     #[test]
-    fn test_parse() {
-        let src = ".ORIG x3000;\nADD R0, R0, 0\n";
+    fn simple() {
+        let src = ".ORIG x3000;\nLABEL ADD R0, R0, #0\n.end";
         let tokens = Lexer::new(src);
         let cst = parse(tokens);
+        println!("{:?}", cst);
     }
 
 }

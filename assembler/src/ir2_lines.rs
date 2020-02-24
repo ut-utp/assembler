@@ -6,7 +6,7 @@ use itertools::Itertools;
 
 pub type Lines<'input> = Vec<Line<'input>>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Line<'input> {
     pub content: LineContent<'input>,
     pub whitespace: Vec<Token<'input>>, // Only includes whitespace around operation
@@ -295,47 +295,39 @@ fn parse_separator<'input, T>(tokens: &mut Peekable<T>) -> Result<Vec<Token<'inp
 }
 
 #[cfg(test)]
-mod ir2_tests {
+mod tests {
     use super::*;
-    use pretty_assertions::assert_eq;
     use crate::lexer::Lexer;
     use crate::ir1_simple_lines::parse_simple_lines;
 
     #[test]
-    fn test_parse_lines_add() {
-        let mut lexer = Lexer::new("ADD R0, R0, R0");
+    fn add() {
+        let lexer = Lexer::new("ADD R0, R0, R0");
         let simple_lines = parse_simple_lines(lexer);
         let lines = parse_lines(simple_lines);
-        let Line { content, whitespace, comment, newline } = lines.get(0).unwrap();
-        println!("{:?}", content);
+        let Line { content, .. } = lines.get(0).unwrap();
         let matches = if let LineContent::Valid(None, Some(operation_tokens)) = content {
-            if let OperationTokens { operator, operands, separators } = operation_tokens {
-                if let OperandTokens::Add { .. } = operands {
-                    true
-                } else { false }
+            if let OperationTokens { operands: OperandTokens::Add { .. }, ..} = operation_tokens {
+                true
             } else { false }
         } else { false };
         assert!(matches);
     }
 
     #[test]
-    fn test_parse_lines_label_add() {
-        let mut lexer = Lexer::new("LABEL\n\tADD R0, R1, #1");
+    fn labeled_add() {
+        let lexer = Lexer::new("LABEL\n\tADD R0, R1, #1");
         let simple_lines = parse_simple_lines(lexer);
         let lines = parse_lines(simple_lines);
 
-        let Line { content, whitespace, comment, newline } = lines.get(0).unwrap();
-        println!("{:?}", content);
+        let Line { content, .. } = lines.get(0).unwrap();
         let line_0_matches = if let LineContent::Valid(Some(_), None) = content { true } else { false };
         assert!(line_0_matches);
 
-        let Line { content, whitespace, comment, newline } = lines.get(1).unwrap();
-        println!("{:?}", content);
+        let Line { content, .. } = lines.get(1).unwrap();
         let line_1_matches = if let LineContent::Valid(None, Some(operation_tokens)) = content {
-            if let OperationTokens { operands, .. } = operation_tokens {
-                if let OperandTokens::Add { .. } = operands {
-                    true
-                } else { false }
+            if let OperationTokens { operands: OperandTokens::Add { .. }, .. } = operation_tokens {
+                true
             } else { false }
         } else { false };
         assert!(line_1_matches);

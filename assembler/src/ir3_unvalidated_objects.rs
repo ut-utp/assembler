@@ -82,7 +82,6 @@ pub fn parse_unvalidated_file(lines: Lines) -> UnvalidatedFile {
 }
 
 struct ObjectParseError<'input> {
-    message: String,
     lines_seen: Vec<Line<'input>>,
 }
 
@@ -112,8 +111,8 @@ fn parse_unvalidated_object_content<'input, T>(lines: &mut Peekable<T>) -> Resul
 
                 let Line { content, whitespace: line_whitespace, comment, newline } = line;
 
-                if let Some(line) = &hanging_label {
-                    if let LineContent::Valid(None, Some(operation)) = &content {
+                if hanging_label.is_some() {
+                    if let LineContent::Valid(None, Some(_)) = &content {
                     } else {
                         hanging_labels.push(hanging_label.take().unwrap());
                     }
@@ -122,9 +121,9 @@ fn parse_unvalidated_object_content<'input, T>(lines: &mut Peekable<T>) -> Resul
                 match content {
                     LineContent::Invalid(_) => { invalid_lines.push(line_backup); }
                     LineContent::Valid(None, None) => { empty_lines.push(line_backup); },
-                    LineContent::Valid(Some(label), None) => { hanging_label = Some(line_backup); },
+                    LineContent::Valid(Some(_), None) => { hanging_label = Some(line_backup); },
                     LineContent::Valid(label, Some(operation)) => {
-                        let label = if let Some(line) = &hanging_label {
+                        let label = if hanging_label.is_some() {
                             assert!(label.is_none());
                             let Line { 
                                 content: label_content,
@@ -175,7 +174,6 @@ fn parse_unvalidated_object_content<'input, T>(lines: &mut Peekable<T>) -> Resul
         Ok(UnvalidatedObjectContent { operations, empty_lines, hanging_labels, invalid_lines })
     } else {
         Err(ObjectParseError {
-            message: "Hit end of file before .END".to_string(),
             lines_seen
         })
     }
