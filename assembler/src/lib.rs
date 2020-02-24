@@ -4,13 +4,18 @@
 // TODO: docs URL
 
 pub mod error;
+
 pub mod lexer;
+
 pub mod parser;
 pub mod ir1_simple_lines;
 pub mod ir2_lines;
 pub mod ir3_unvalidated_objects;
 pub mod cst;
 pub mod expanded;
+
+pub mod assembler;
+
 
 #[cfg(test)]
 mod tests {

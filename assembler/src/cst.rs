@@ -1,4 +1,4 @@
-use lc3_isa::{Addr, SignedWord, check_signed_imm};
+use lc3_isa::{Addr, SignedWord, check_signed_imm, Word};
 use crate::error::ParseError;
 use crate::lexer::Token;
 use crate::ir2_lines::{Line, OperationTokens, OperandTokens};
@@ -33,7 +33,7 @@ pub type Separator<'input> = Token<'input>;
 
 // Different from lc3_isa::Instruction in that offsets from labels aren't computed.
 // Also covers pseudo-ops.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Operation<'input> {
     pub label: Option<Label<'input>>,
     pub operator: Token<'input>,
@@ -45,29 +45,35 @@ pub struct Operation<'input> {
     pub newlines: Vec<Token<'input>>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Checked<'input, T> {
     pub src: Token<'input>,
     pub value: Result<T, ParseError>,
 }
 
+impl<'input, T> Checked<'input, T> {
+    pub fn unwrap(self) -> T {
+        self.value.unwrap()
+    }
+}
+
 pub type Reg<'input> = Checked<'input, lc3_isa::Reg>;
 pub type Immediate<'input, T> = Checked<'input, T>;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Sr2OrImm5<'input> {
     Sr2(Reg<'input>),
     Imm5(Immediate<'input, SignedWord>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ConditionCodes {
     pub n: bool,
     pub z: bool,
     pub p: bool,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Operands<'input> {
     Add { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Result<Sr2OrImm5<'input>, ParseError> },
     And { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Result<Sr2OrImm5<'input>, ParseError> },
@@ -95,7 +101,7 @@ pub enum Operands<'input> {
     Halt,
 
     Orig { origin: Immediate<'input, Addr> },
-    Fill { value: Immediate<'input, SignedWord> },
+    Fill { value: Immediate<'input, Word> },
     Blkw { size_src: Token<'input>, size: Immediate<'input, Addr> }, // Addr used here to signify a number of locations. Max is number of possible Addrs.
     Stringz { string: Token<'input> },
     End,
