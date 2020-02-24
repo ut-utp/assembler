@@ -50,7 +50,7 @@ mod ir1_tests {
     #[test]
     fn test_parse_simple_lines_no_newline() {
         let mut lexer = Lexer::new("ADD");
-        let simple_lines = parse_simple_lines(&mut lexer);
+        let simple_lines = parse_simple_lines(lexer);
         let SimpleLine { content, comment, newline } = simple_lines.get(0).unwrap();
         assert_eq!(content.len(), 1);
         assert!(comment.is_none());
@@ -60,7 +60,7 @@ mod ir1_tests {
     #[test]
     fn test_parse_simple_lines_two_lines() {
         let mut lexer = Lexer::new("ADD ; test\n.END");
-        let simple_lines = parse_simple_lines(&mut lexer);
+        let simple_lines = parse_simple_lines(lexer);
         let SimpleLine { content, comment, newline } = simple_lines.get(0).unwrap();
         assert_eq!(content.len(), 2);
         assert!(comment.is_some());
