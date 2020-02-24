@@ -11,7 +11,7 @@ const MEM_DUMP_FILE_EXTENSION: &'static str = "mem";
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
-    for arg in args {
+    for arg in args[1..].iter() {
         let path = Path::new(arg.as_str());
         assert!(path.is_file());
 
@@ -20,7 +20,7 @@ fn main() {
         let cst = parse(lexer);
         let mem = assemble(cst.objects);
 
-        let mut output_path = PathBuf::from(path);
+        let mut output_path = PathBuf::from(arg);
         output_path.set_extension(MEM_DUMP_FILE_EXTENSION);
         let mut file_backed_mem = FileBackedMemoryShim::with_initialized_memory(output_path, mem);
         file_backed_mem.flush().unwrap();

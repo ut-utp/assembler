@@ -55,6 +55,7 @@ pub fn expand_pseudo_ops(object: cst::Object) -> Object {
             Operands::Fill { value } => {
                 ops_or_values.push(OpOrValue::Value(value.unwrap()));
             },
+            Operands::End => { /* ignore */ },
             _ => {
                 ops_or_values.push(OpOrValue::Operation(operation));
             },
@@ -142,6 +143,7 @@ pub fn construct_instructions(object: Object, symbol_table: HashMap<&str, Addr>)
                     Operands::In    => Instruction::new_trap(0x0023),
                     Operands::Putsp => Instruction::new_trap(0x0024),
                     Operands::Halt  => Instruction::new_trap(0x0025),
+
                     _ => unreachable!() // TODO: restructure enum to avoid this
                 };
                 InsnOrValue::Instruction(insn)

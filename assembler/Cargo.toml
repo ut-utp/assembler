@@ -19,11 +19,13 @@ license = "MPL-2.0"
 
 default-run = "assembler"
 
-
 [[bin]]
 name = "assembler"
 path = "bin/as.rs"
 
+[[bin]]
+name = "verifier"
+path = "bin/verify.rs"
 
 [badges]
 github-actions = { repository = "ut-utp/assembler", workflow = "assembler" }
