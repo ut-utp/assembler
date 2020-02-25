@@ -55,6 +55,12 @@ impl<'input, T> Checked<'input, T> {
     pub fn unwrap(self) -> T {
         self.value.unwrap()
     }
+    
+    pub fn extract_error_into(self, errors: &mut Vec<ParseError>) {
+        if let Err(error) = self.value {
+            errors.push(error);
+        }
+    }
 }
 
 pub type Reg<'input> = Checked<'input, lc3_isa::Reg>;
@@ -270,17 +276,32 @@ fn validate_signed_immediate(src: Token, num_bits: u32) -> Immediate<SignedWord>
 fn validate_label(src: Token) -> Label {
     let label = src.src;
 
-    let valid_length = (1..=20).contains(&label.len());
+    let length = &label.len();
+    let valid_length = (1..=20).contains(length);
 
     let mut chars = label.chars();
-    let first_char_alphabetic = chars.next().filter(|c| c.is_alphabetic()).is_some();
-    let other_chars_alphanumeric = chars.all(char::is_alphanumeric);
+    let first_char = chars.next();
+    let first_char_alphabetic = first_char.filter(|c| c.is_alphabetic()).is_some();
+
+    let mut other_chars = chars.collect::<Vec<_>>();
+    other_chars.retain(|&c| !(c.is_alphanumeric() || c == '_'));
+    let other_chars_alphanumeric = other_chars.len() == 0;
 
     let valid = valid_length && first_char_alphabetic && other_chars_alphanumeric;
     let value = if valid {
         Ok(label)
     } else {
-        Err(ParseError("Invalid label.".to_string()))
+        let mut reasons = Vec::new();
+        if !valid_length {
+            reasons.push(format!("not between 1-20 chars (was: {})", length).to_string());
+        }
+        if !first_char_alphabetic {
+            reasons.push(format!("first char not alphabetic (was: {:?})", first_char).to_string());
+        }
+        if !other_chars_alphanumeric {
+            reasons.push(format!("other chars not alphanumeric or underscores (bad chars: {})", other_chars.into_iter().collect::<String>()).to_string());
+        }
+        Err(ParseError(format!("Invalid label: {}; reasons: {}", label, reasons.join(", ")).to_string()))
     };
 
     Label { src, value }

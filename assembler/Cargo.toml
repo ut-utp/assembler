@@ -24,8 +24,8 @@ name = "assembler"
 path = "bin/as.rs"
 
 [[bin]]
-name = "verifier"
-path = "bin/verify.rs"
+name = "check"
+path = "bin/check.rs"
 
 [badges]
 github-actions = { repository = "ut-utp/assembler", workflow = "assembler" }
