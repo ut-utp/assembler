@@ -7,6 +7,8 @@ use lc3_assembler::parser::parse;
 use lc3_assembler::error::ParseError;
 use lc3_assembler::cst;
 use lc3_assembler::cst::{Object, Operation, ObjectContent, Operands};
+use annotate_snippets::formatter::DisplayListFormatter;
+use annotate_snippets::display_list::DisplayList;
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
@@ -19,10 +21,13 @@ fn main() {
         let lexer = Lexer::new(str);
         let cst = parse(lexer);
         
+        let dlf = DisplayListFormatter::new(true, false);
         let errors = extract_file_errors(cst);
         if errors.len() > 0 {
             for error in errors {
-                println!("{}: {}", path.display(), error);
+                let snippet = error.create_snippet(string.clone(), Some(arg.clone()));
+                let dl = DisplayList::from(snippet);
+                println!("{}", dlf.format(&dl));
             }
         } else {
             println!("{}: found no errors", path.display());
@@ -36,7 +41,7 @@ fn extract_file_errors(cst: cst::File) -> Vec<ParseError> {
     
     let cst::File { objects, .. } = cst;
     if objects.len() == 0 {
-        errors.push(ParseError("File contained no objects.".to_string()));
+        errors.push(ParseError::Misc("File contained no objects.".to_string()));
     }
     
     for object in objects {
@@ -67,11 +72,11 @@ fn extract_object_content_errors(object_content: ObjectContent) -> Vec<ParseErro
     }
     
     for _ in hanging_labels {
-        errors.push(ParseError("Hanging label.".to_string()));
+        errors.push(ParseError::Misc("Hanging label.".to_string()));
     }
     
     for _ in invalid_lines {
-        errors.push(ParseError("Invalid line.".to_string()));
+        errors.push(ParseError::Misc("Invalid line.".to_string()));
     }
     
     errors

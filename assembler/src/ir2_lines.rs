@@ -106,7 +106,7 @@ fn parse_token<'input, T>(tokens: &mut Peekable<T>, target_type: TokenType) -> R
             return Ok(tokens.next().unwrap());
         }
     }
-    Err(ParseError("Didn't find ambiguous token next.".to_string()))
+    Err(ParseError::Misc("Didn't find ambiguous token next.".to_string()))
 }
 
 // Expands to the necessary steps to parse operands into a given OperandTokens struct variant.
@@ -214,13 +214,13 @@ fn parse_operation_tokens<'input, T>(mut tokens: &mut Peekable<T>, mut whitespac
                 let operands = parse_operand_tokens(op, tokens, &mut separators)?;
                 skip_and_collect_whitespace(&mut tokens, &mut whitespace);
                 if tokens.peek().is_some() {
-                    Err(ParseError("Extra tokens at end of line.".to_string()))
+                    Err(ParseError::Misc("Extra tokens at end of line.".to_string()))
                 } else {
                     Ok(Some(OperationTokens { operator: token, operands, separators }))
                 }
             }
             TokenType::Whitespace => unreachable!("Function was called without first skipping whitespace."),
-            _ => Err(ParseError("Unexpected non-operator token at beginning of 'instruction'".to_string()))
+            _ => Err(ParseError::Misc("Unexpected non-operator token at beginning of 'instruction'".to_string()))
         }
         None => Ok(None),
     }
@@ -236,9 +236,9 @@ fn parse_nzp<'input, T>(tokens: &mut Peekable<T>) -> Result<Option<Token<'input>
                 Ok(Some(token))
             },
             TokenType::Whitespace => Ok(None),
-            _ => Err(ParseError("Found non-nzp token while parsing nzp.".to_string()))
+            _ => Err(ParseError::Misc("Found non-nzp token while parsing nzp.".to_string()))
         },
-        None => Err(ParseError("Ran out of tokens while parsing nzp.".to_string())),
+        None => Err(ParseError::Misc("Ran out of tokens while parsing nzp.".to_string())),
     }
 }
 
@@ -271,7 +271,7 @@ fn parse_whitespace<'input, T>(tokens: &mut Peekable<T>) -> Result<Vec<Token<'in
     let whitespace = tokens.peeking_take_while(|&Token { ty, .. }| ty == TokenType::Whitespace)
         .collect::<Vec<_>>();
     if whitespace.is_empty() {
-        Err(ParseError("Missing required whitespace.".to_string()))
+        Err(ParseError::Misc("Missing required whitespace.".to_string()))
     } else {
         Ok(whitespace)
     }
@@ -286,9 +286,9 @@ fn parse_separator<'input, T>(tokens: &mut Peekable<T>) -> Result<Vec<Token<'inp
         .filter(|&Token { ty, .. }| *ty == TokenType::Comma)
         .count();
     if num_commas > 1 {
-        Err(ParseError("Too many comma separators.".to_string()))
+        Err(ParseError::Misc("Too many comma separators.".to_string()))
     } else if separator.is_empty() {
-        Err(ParseError("Missing separator.".to_string()))
+        Err(ParseError::Misc("Missing separator.".to_string()))
     } else {
         Ok(separator)
     }

@@ -1,10 +1,11 @@
 use regex::Regex;
 
+pub type Span = (usize, usize);
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Token<'input> {
     pub src: &'input str,
-    pub start: usize,
-    pub end: usize,
+    pub span: Span,
     pub ty: TokenType,
 }
 
@@ -185,8 +186,7 @@ impl<'input> Iterator for Lexer<'input> {
                 self.cur_pos += found.end();
                 let token = Token {
                     src: found.as_str(),
-                    start,
-                    end: self.cur_pos,
+                    span: (start, self.cur_pos),
                     ty: *token_type,
                 };
                 return Some(token);

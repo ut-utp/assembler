@@ -1,5 +1,5 @@
 use lc3_isa::{Addr, SignedWord, check_signed_imm, Word};
-use crate::error::ParseError;
+use crate::error::{ParseError, InvalidLabelReason};
 use crate::lexer::Token;
 use crate::ir2_lines::{Line, OperationTokens, OperandTokens};
 use crate::ir3_unvalidated_objects::{UnvalidatedFile, UnvalidatedObject, UnvalidatedLine, UnvalidatedObjectContent};
@@ -230,7 +230,7 @@ fn validate_sr2_or_imm5(src: Token) -> Result<Sr2OrImm5, ParseError> {
     } else if let Immediate { value: Ok(_), .. } = imm5 {
         Ok(Sr2OrImm5::Imm5(imm5))
     } else {
-        Err(ParseError("Invalid as SR2 and as Imm5.".to_string()))
+        Err(ParseError::Misc("Invalid as SR2 and as Imm5.".to_string()))
     }
 }
 
@@ -240,9 +240,9 @@ fn validate_reg(src: Token) -> Reg {
             .filter(|s| s.len() == 1)
             .and_then(|s| s.parse::<u8>().ok())
             .and_then(|i| i.try_into().ok())
-            .ok_or(ParseError("Invalid register: didn't follow R with only 0-7".to_string()))
+            .ok_or(ParseError::Misc("Invalid register: didn't follow R with only 0-7".to_string()))
     } else {
-        Err(ParseError("Invalid register: didn't start with R".to_string()))
+        Err(ParseError::Misc("Invalid register: didn't start with R".to_string()))
     };
     Reg { src, value }
 }
@@ -260,7 +260,7 @@ fn validate_numeric_immediate<T: Num>(src: Token) -> Immediate<T> {
         } else {
             None
         }
-    }).ok_or(ParseError("Invalid numeric immediate.".to_string())); // TODO: make error message good.
+    }).ok_or(ParseError::Misc("Invalid numeric immediate.".to_string())); // TODO: make error message good.
 
     Immediate { src, value }
 }
@@ -269,7 +269,7 @@ fn validate_signed_immediate(src: Token, num_bits: u32) -> Immediate<SignedWord>
     let Immediate { src, value } = validate_numeric_immediate(src);
     let value = value.ok()
         .filter(|&i| check_signed_imm(i, num_bits))
-        .ok_or(ParseError("Invalid signed word immediate".to_string()));
+        .ok_or(ParseError::Misc("Invalid signed word immediate".to_string()));
     Immediate { src, value }
 }
 
@@ -293,15 +293,18 @@ fn validate_label(src: Token) -> Label {
     } else {
         let mut reasons = Vec::new();
         if !valid_length {
-            reasons.push(format!("not between 1-20 chars (was: {})", length).to_string());
+            reasons.push(InvalidLabelReason::Length { actual: length.clone() });
         }
         if !first_char_alphabetic {
-            reasons.push(format!("first char not alphabetic (was: {:?})", first_char).to_string());
+            reasons.push(InvalidLabelReason::FirstChar { actual: first_char });
         }
         if !other_chars_alphanumeric {
-            reasons.push(format!("other chars not alphanumeric or underscores (bad chars: {})", other_chars.into_iter().collect::<String>()).to_string());
+            reasons.push(InvalidLabelReason::OtherChars { actual: other_chars.into_iter().collect::<String>() });
         }
-        Err(ParseError(format!("Invalid label: {}; reasons: {}", label, reasons.join(", ")).to_string()))
+        Err(ParseError::InvalidLabel {
+            range: src.span,
+            reasons,
+        })
     };
 
     Label { src, value }
@@ -324,18 +327,18 @@ fn validate_condition_codes_str(src: &str) -> Result<ConditionCodes, ParseError>
         match c {
             // TODO: prettify with macro or non-iterative solution
             'n' | 'N' => {
-                if n { return Err(ParseError("Duplicate condition code n.".to_string())); }
+                if n { return Err(ParseError::Misc("Duplicate condition code n.".to_string())); }
                 n = true;
             },
             'z' | 'Z' => {
-                if z { return Err(ParseError("Duplicate condition code z.".to_string())); }
+                if z { return Err(ParseError::Misc("Duplicate condition code z.".to_string())); }
                 z = true;
             },
             'p' | 'P' => {
-                if p { return Err(ParseError("Duplicate condition code p.".to_string())); }
+                if p { return Err(ParseError::Misc("Duplicate condition code p.".to_string())); }
                 p = true;
             },
-            _ => { return Err(ParseError("Invalid condition codes.".to_string())) },
+            _ => { return Err(ParseError::Misc("Invalid condition codes.".to_string())) },
         }
     }
     Ok(ConditionCodes { n, z, p })
@@ -344,6 +347,6 @@ fn validate_condition_codes_str(src: &str) -> Result<ConditionCodes, ParseError>
 fn validate_blkw_immediate(src: Token) -> Immediate<Addr> {
     Immediate {
         src,
-        value: src.src.parse().map_err(|_| ParseError("Invalid BLKW immediate.".to_string()))
+        value: src.src.parse().map_err(|_| ParseError::Misc("Invalid BLKW immediate.".to_string()))
     }
 }
