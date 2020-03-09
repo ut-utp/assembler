@@ -31,9 +31,11 @@ fn main() {
         assert!(path.is_file());
 
         let leniency = if matches.is_present("strict") { Strict } else { Lenient };
+
         let string = fs::read_to_string(path).unwrap();
         let lexer = Lexer::new(string.as_str());
         let cst = parse(lexer, leniency);
+
 
         let dlf = DisplayListFormatter::new(true, false);
         let errors = extract_file_errors(cst.clone());
