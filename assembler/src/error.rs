@@ -4,6 +4,7 @@ use annotate_snippets::snippet::{Snippet, Annotation, Slice, SourceAnnotation, A
 
 use ParseError::*;
 use itertools::Itertools;
+use annotate_snippets::display_list::DisplayMarkType::AnnotationStart;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LexError {
@@ -13,11 +14,31 @@ pub enum LexError {
 
 #[derive(Debug, Clone)]
 pub enum ParseError {
+    InvalidReg {
+        range: Span,
+        reason: InvalidRegReason
+    },
     InvalidLabel { 
         range: Span,
         reasons: Vec<InvalidLabelReason>,
     },
     Misc(String),
+}
+
+#[derive(Debug, Clone)]
+pub enum InvalidRegReason {
+    FirstChar,
+    Number,
+}
+
+impl Display for InvalidRegReason {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        use InvalidRegReason::*;
+        match self {
+            FirstChar => { write!(f, "didn't start with R") }
+            Number => { write!(f, "didn't follow R with only 0-7") }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -44,6 +65,9 @@ impl<'input> ParseError {
             InvalidLabel { reasons, .. } => {
                 format!("invalid label, reasons -- {}", reasons.iter().map(InvalidLabelReason::to_string).join(", "))
             },
+            InvalidReg { reason, .. } => {
+                format!("invalid register, {}", reason.to_string())
+            }
             Misc(message) => message.clone(),
         }
     }
@@ -55,11 +79,20 @@ impl<'input> ParseError {
                 annotations.push(
                     SourceAnnotation {
                         range: range.clone(),
-                        label: "invalid label".to_string(),
-                        annotation_type: AnnotationType::Error
+                        label: "invalid label here".to_string(),
+                        annotation_type: AnnotationType::Error,
                     }
                 );
             },
+            InvalidReg { range, .. } => {
+                annotations.push(
+                    SourceAnnotation {
+                        range: range.clone(),
+                        label: "invalid reg here".to_string(),
+                        annotation_type: AnnotationType::Error,
+                    }
+                )
+            }
             Misc(_) => {},
         }
         annotations

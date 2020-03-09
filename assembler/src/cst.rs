@@ -1,5 +1,5 @@
 use lc3_isa::{Addr, SignedWord, check_signed_imm, Word};
-use crate::error::{ParseError, InvalidLabelReason};
+use crate::error::{ParseError, InvalidLabelReason, InvalidRegReason};
 use crate::lexer::Token;
 use crate::ir2_lines::{Line, OperationTokens, OperandTokens};
 use crate::ir3_unvalidated_objects::{UnvalidatedFile, UnvalidatedObject, UnvalidatedLine, UnvalidatedObjectContent};
@@ -7,6 +7,7 @@ use std::convert::TryInto;
 use num_traits::Num;
 use std::string::ToString;
 use crate::parser::LeniencyLevel;
+use crate::ir2_lines::LineContent::Invalid;
 
 #[derive(Clone, Debug)]
 pub struct File<'input> {
@@ -247,9 +248,15 @@ impl CstParser {
                 .filter(|s| s.len() == 1)
                 .and_then(|s| s.parse::<u8>().ok())
                 .and_then(|i| i.try_into().ok())
-                .ok_or(ParseError::Misc("Invalid register: didn't follow R with only 0-7".to_string()))
+                .ok_or(ParseError::InvalidReg {
+                    range: src.span,
+                    reason: InvalidRegReason::Number,
+                })
         } else {
-            Err(ParseError::Misc("Invalid register: didn't start with R".to_string()))
+            Err(ParseError::InvalidReg {
+                range: src.span,
+                reason: InvalidRegReason::FirstChar,
+            })
         };
         Reg { src, value }
     }
