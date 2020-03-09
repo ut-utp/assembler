@@ -55,7 +55,7 @@ impl<'input> ParseError {
                 annotations.push(
                     SourceAnnotation {
                         range: range.clone(),
-                        label: "invalid label here".to_string(),
+                        label: "invalid label".to_string(),
                         annotation_type: AnnotationType::Error
                     }
                 );

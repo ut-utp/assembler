@@ -23,10 +23,6 @@ default-run = "assembler"
 name = "assembler"
 path = "bin/as.rs"
 
-[[bin]]
-name = "check"
-path = "bin/check.rs"
-
 [badges]
 github-actions = { repository = "ut-utp/assembler", workflow = "assembler" }
 codecov = { repository = "ut-utp/assembler", branch = "master", service = "github" }
@@ -41,6 +37,7 @@ regex = "0.2.1"
 itertools = "0.8.2"
 num-traits = "0.2.11"
 annotate-snippets = "0.6.1"
+clap = "2.33.0"
 
 lc3-isa = { git = "https://github.com/ut-utp/prototype", branch = "master", version = "0.1.0", default-features = false }
 # TODO: ^ eventually don't pull this from git
