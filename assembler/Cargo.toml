@@ -17,10 +17,10 @@ categories = ["assembly", "tooling", "command-line-utilities"]
 
 license = "MPL-2.0"
 
-default-run = "assembler"
+default-run = "assemble_lc3"
 
 [[bin]]
-name = "assembler"
+name = "assemble_lc3"
 path = "bin/as.rs"
 
 [badges]

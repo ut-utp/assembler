@@ -17,12 +17,12 @@ use annotate_snippets::display_list::DisplayList;
 const MEM_DUMP_FILE_EXTENSION: &'static str = "mem";
 
 fn main() {
-    let matches = clap_app!(as =>
+    let matches = clap_app!(assemble_lc3 =>
         (version: env!("CARGO_PKG_VERSION"))
         (author: env!("CARGO_PKG_AUTHORS"))
         (about: env!("CARGO_PKG_DESCRIPTION"))
         (@arg strict: -s --strict "Enforces all rules of the original LC-3 assembly language when validating the program")
-        (@arg check:  -c --check  "Check the correctness of the program without attempting to assemble it")
+        (@arg check:  -c --check  "Checks the correctness of the program without attempting to assemble it")
         (@arg INPUT: +required ... "Paths to the programs to assemble")
     ).get_matches();
 
