@@ -1,10 +1,9 @@
 use std::fmt::{Display, Formatter, Result};
-use crate::lexer::{Token, Span};
+use crate::lexer::Span;
 use annotate_snippets::snippet::{Snippet, Annotation, Slice, SourceAnnotation, AnnotationType};
 
 use ParseError::*;
 use itertools::Itertools;
-use annotate_snippets::display_list::DisplayMarkType::AnnotationStart;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LexError {

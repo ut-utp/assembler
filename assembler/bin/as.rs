@@ -3,7 +3,7 @@ extern crate lc3_assembler;
 use std::{env, fs};
 use std::path::{Path, PathBuf};
 use lc3_assembler::lexer::Lexer;
-use lc3_assembler::parser::{parse, LeniencyLevel};
+use lc3_assembler::parser::parse;
 use lc3_assembler::assembler::assemble;
 use lc3_shims::memory::FileBackedMemoryShim;
 use clap::clap_app;
@@ -128,61 +128,57 @@ fn extract_operands_errors(operands: Operands) -> Vec<ParseError> {
         Operands::Add { dr, sr1, sr2_or_imm5 } => {
             dr.extract_error_into(&mut errors);
             sr1.extract_error_into(&mut errors);
-            if let Err(error) = sr2_or_imm5 {
-                errors.push(error);
-            }
+            sr2_or_imm5.extract_error_into(&mut errors);
         },
         Operands::And { dr, sr1, sr2_or_imm5 } => {
             dr.extract_error_into(&mut errors);
             sr1.extract_error_into(&mut errors);
-            if let Err(error) = sr2_or_imm5 {
-                errors.push(error);
-            }
+            sr2_or_imm5.extract_error_into(&mut errors);
         },
-        Operands::Br { nzp, label, .. } => {
+        Operands::Br { nzp, pc_offset9, .. } => {
             if let Err(error) = nzp {
                 errors.push(error);
             }
-            label.extract_error_into(&mut errors);
+            pc_offset9.extract_error_into(&mut errors);
         },
         Operands::Jmp { base } => {
             base.extract_error_into(&mut errors);
         },
-        Operands::Jsr { label } => {
-            label.extract_error_into(&mut errors);
+        Operands::Jsr { pc_offset11 } => {
+            pc_offset11.extract_error_into(&mut errors);
         },
         Operands::Jsrr { base } => {
             base.extract_error_into(&mut errors);
         },
 
-        Operands::Ld { dr, label } => {
+        Operands::Ld { dr, pc_offset9 } => {
             dr.extract_error_into(&mut errors);
-            label.extract_error_into(&mut errors);
+            pc_offset9.extract_error_into(&mut errors);
         },
-        Operands::Ldi { dr, label } => {
+        Operands::Ldi { dr, pc_offset9 } => {
             dr.extract_error_into(&mut errors);
-            label.extract_error_into(&mut errors);
+            pc_offset9.extract_error_into(&mut errors);
         },
         Operands::Ldr { dr, base, offset6 } => {
             dr.extract_error_into(&mut errors);
             base.extract_error_into(&mut errors);
             offset6.extract_error_into(&mut errors);
         },
-        Operands::Lea { dr, label } => {
+        Operands::Lea { dr, pc_offset9 } => {
             dr.extract_error_into(&mut errors);
-            label.extract_error_into(&mut errors);
+            pc_offset9.extract_error_into(&mut errors);
         },
         Operands::Not { dr, sr } => {
             dr.extract_error_into(&mut errors);
             sr.extract_error_into(&mut errors);
         },
-        Operands::St { sr, label } => {
+        Operands::St { sr, pc_offset9 } => {
             sr.extract_error_into(&mut errors);
-            label.extract_error_into(&mut errors);
+            pc_offset9.extract_error_into(&mut errors);
         }
-        Operands::Sti { sr, label } => {
+        Operands::Sti { sr, pc_offset9 } => {
             sr.extract_error_into(&mut errors);
-            label.extract_error_into(&mut errors);
+            pc_offset9.extract_error_into(&mut errors);
         }
         Operands::Str { sr, base, offset6 } => {
             sr.extract_error_into(&mut errors);

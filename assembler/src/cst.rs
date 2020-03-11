@@ -7,7 +7,6 @@ use std::convert::TryInto;
 use num_traits::Num;
 use std::string::ToString;
 use crate::parser::LeniencyLevel;
-use crate::ir2_lines::LineContent::Invalid;
 
 #[derive(Clone, Debug)]
 pub struct File<'input> {
@@ -75,29 +74,37 @@ pub enum Sr2OrImm5<'input> {
 }
 
 #[derive(Clone, Debug)]
+pub enum ImmOrLabel<'input> {
+    Imm(Immediate<'input, SignedWord>),
+    Label(Label<'input>),
+}
+
+#[derive(Clone, Debug)]
 pub struct ConditionCodes {
     pub n: bool,
     pub z: bool,
     pub p: bool,
 }
 
+type PCOffset<'input> = Checked<'input, ImmOrLabel<'input>>;
+
 #[derive(Clone, Debug)]
 pub enum Operands<'input> {
-    Add { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Result<Sr2OrImm5<'input>, ParseError> },
-    And { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Result<Sr2OrImm5<'input>, ParseError> },
-    Br { nzp_src: Option<Token<'input>>, nzp: Result<ConditionCodes, ParseError>, label: Label<'input> },
+    Add { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Checked<'input, Sr2OrImm5<'input>> },
+    And { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Checked<'input, Sr2OrImm5<'input>> },
+    Br { nzp_src: Option<Token<'input>>, nzp: Result<ConditionCodes, ParseError>, pc_offset9: PCOffset<'input> },
     Jmp { base: Reg<'input> },
-    Jsr { label: Label<'input> },
+    Jsr { pc_offset11: PCOffset<'input> },
     Jsrr { base: Reg<'input> },
-    Ld { dr: Reg<'input>, label: Label<'input> },
-    Ldi { dr: Reg<'input>, label: Label<'input> },
+    Ld { dr: Reg<'input>, pc_offset9: PCOffset<'input> },
+    Ldi { dr: Reg<'input>, pc_offset9: PCOffset<'input> },
     Ldr { dr: Reg<'input>, base: Reg<'input>, offset6: Immediate<'input, SignedWord> },
-    Lea { dr: Reg<'input>, label: Label<'input> },
+    Lea { dr: Reg<'input>, pc_offset9: PCOffset<'input> },
     Not { dr: Reg<'input>, sr: Reg<'input> },
     Ret,
     Rti,
-    St { sr: Reg<'input>, label: Label<'input> },
-    Sti { sr: Reg<'input>, label: Label<'input> },
+    St { sr: Reg<'input>, pc_offset9: PCOffset<'input> },
+    Sti { sr: Reg<'input>, pc_offset9: PCOffset<'input> },
     Str { sr: Reg<'input>, base: Reg<'input>, offset6: Immediate<'input, SignedWord> },
     Trap { trap_vec: Immediate<'input, u8> },
 
@@ -133,8 +140,8 @@ impl CstParser {
         let UnvalidatedObject { origin_src, origin, content } = object;
         let UnvalidatedObjectContent { operations, empty_lines, hanging_labels, invalid_lines } = content;
         Object {
-            origin_src:self.validate_line(origin_src),
-            origin:self.validate_numeric_immediate(origin),
+            origin_src: self.validate_line(origin_src),
+            origin: self.validate_numeric_immediate(origin),
             content: ObjectContent {
                 operations: operations.into_iter().map(|o| self.validate_line(o)).collect(),
                 empty_lines,
@@ -160,7 +167,7 @@ impl CstParser {
         Operation {
             label: label.map(|l| self.validate_label(l)),
             operator,
-            operands:self.validate_operand_tokens(operands),
+            operands: self.validate_operand_tokens(operands),
             separators,
             whitespace,
             comments,
@@ -187,26 +194,26 @@ impl CstParser {
                 Operands::Br {
                     nzp_src,
                     nzp,
-                    label: self.validate_label(label),
+                    pc_offset9: self.validate_imm_or_label(label, 9),
                 }
             },
             OperandTokens::Jmp { base } => Operands::Jmp { base: self.validate_reg(base) },
-            OperandTokens::Jsr { label } => Operands::Jsr { label: self.validate_label(label) },
+            OperandTokens::Jsr { label } => Operands::Jsr { pc_offset11: self.validate_imm_or_label(label, 11) },
             OperandTokens::Jsrr { base } => Operands::Jsrr { base: self.validate_reg(base) },
-            OperandTokens::Ld { dr, label } => Operands::Ld { dr: self.validate_reg(dr), label: self.validate_label(label) },
-            OperandTokens::Ldi { dr, label } => Operands::Ldi { dr: self.validate_reg(dr), label: self.validate_label(label) },
+            OperandTokens::Ld { dr, label } => Operands::Ld { dr: self.validate_reg(dr), pc_offset9: self.validate_imm_or_label(label, 9) },
+            OperandTokens::Ldi { dr, label } => Operands::Ldi { dr: self.validate_reg(dr), pc_offset9: self.validate_imm_or_label(label, 9) },
             OperandTokens::Ldr { dr, base, offset6 } =>
                 Operands::Ldr {
-                    dr:self.validate_reg(dr),
-                    base:self.validate_reg(base),
-                    offset6:self.validate_signed_immediate(offset6, 6),
+                    dr: self.validate_reg(dr),
+                    base: self.validate_reg(base),
+                    offset6: self.validate_signed_immediate(offset6, 6),
                 },
-            OperandTokens::Lea { dr, label } => Operands::Lea { dr: self.validate_reg(dr), label: self.validate_label(label) },
+            OperandTokens::Lea { dr, label } => Operands::Lea { dr: self.validate_reg(dr), pc_offset9: self.validate_imm_or_label(label, 9) },
             OperandTokens::Not { dr, sr } => Operands::Not { dr: self.validate_reg(dr), sr: self.validate_reg(sr) },
             OperandTokens::Ret => Operands::Ret,
             OperandTokens::Rti => Operands::Rti,
-            OperandTokens::St { sr, label } => Operands::St { sr: self.validate_reg(sr), label: self.validate_label(label) },
-            OperandTokens::Sti { sr, label } => Operands::Sti { sr: self.validate_reg(sr), label: self.validate_label(label) },
+            OperandTokens::St { sr, label } => Operands::St { sr: self.validate_reg(sr), pc_offset9: self.validate_imm_or_label(label, 9) },
+            OperandTokens::Sti { sr, label } => Operands::Sti { sr: self.validate_reg(sr), pc_offset9: self.validate_imm_or_label(label, 9) },
             OperandTokens::Str { sr, base, offset6 } =>
                 Operands::Str {
                     sr: self.validate_reg(sr),
@@ -230,16 +237,17 @@ impl CstParser {
         }
     }
 
-    fn validate_sr2_or_imm5<'input>(&self, src: Token<'input>) -> Result<Sr2OrImm5<'input>, ParseError> {
+    fn validate_sr2_or_imm5<'input>(&self, src: Token<'input>) -> Checked<'input, Sr2OrImm5<'input>> {
         let reg = self.validate_reg(src);
         let imm5 = self.validate_signed_immediate(src, 5);
-        if let Reg { value: Ok(_), .. } = reg {
+        let value = if let Reg { value: Ok(_), .. } = reg {
             Ok(Sr2OrImm5::Sr2(reg))
         } else if let Immediate { value: Ok(_), .. } = imm5 {
             Ok(Sr2OrImm5::Imm5(imm5))
         } else {
-            Err(ParseError::Misc("Invalid as SR2 and as Imm5.".to_string()))
-        }
+            Err(ParseError::Misc("Invalid as register and as 5-bit immediate.".to_string()))
+        };
+        Checked { src, value }
     }
 
     fn validate_reg<'input>(&self, src: Token<'input>) -> Reg<'input> {
@@ -285,6 +293,19 @@ impl CstParser {
             .filter(|&i| check_signed_imm(i, num_bits))
             .ok_or(ParseError::Misc("Invalid signed word immediate".to_string()));
         Immediate { src, value }
+    }
+    
+    fn validate_imm_or_label<'input>(&self, src: Token<'input>, num_bits: u32) -> Checked<'input, ImmOrLabel<'input>>  {
+        let label = self.validate_label(src);
+        let imm = self.validate_signed_immediate(src, num_bits);
+        let value = if let Label { value: Ok(_), .. } = label {
+            Ok(ImmOrLabel::Label(label))
+        } else if let Immediate { value: Ok(_), .. } = imm {
+            Ok(ImmOrLabel::Imm(imm))
+        } else {
+            Err(ParseError::Misc("Invalid as label and as immediate.".to_string()))
+        };
+        Checked { src, value }
     }
 
     fn validate_label<'input>(&self, src: Token<'input>) -> Label<'input> {

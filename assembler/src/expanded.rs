@@ -1,6 +1,6 @@
 // For expanded pseudo-op structures
 use crate::cst;
-use crate::cst::Operands;
+use crate::cst::{Operands, ImmOrLabel};
 use crate::error::MemoryError;
 use lc3_isa;
 use lc3_isa::{Word, SignedWord};
@@ -113,24 +113,24 @@ pub fn construct_instructions(object: Object, symbol_table: HashMap<&str, Addr>)
                         cst::Sr2OrImm5::Sr2(src_reg)    => Instruction::new_and_reg(dr.unwrap(), sr1.unwrap(), src_reg.unwrap()),
                     },
                     
-                    Operands::Ld { dr, label } => Instruction::new_ld(dr.unwrap(), compute_offset(label, current_location, &symbol_table)),
-                    Operands::Ldi { dr, label } => Instruction::new_ldi(dr.unwrap(), compute_offset(label, current_location, &symbol_table)),
+                    Operands::Ld { dr, pc_offset9 } => Instruction::new_ld(dr.unwrap(), compute_offset(pc_offset9, current_location, &symbol_table)),
+                    Operands::Ldi { dr, pc_offset9 } => Instruction::new_ldi(dr.unwrap(), compute_offset(pc_offset9, current_location, &symbol_table)),
                     Operands::Ldr { dr, base, offset6 } => Instruction::new_ldr(dr.unwrap(), base.unwrap(), offset6.unwrap()),
-                    Operands::Lea { dr, label } => Instruction::new_lea(dr.unwrap(), compute_offset(label, current_location, &symbol_table)),
+                    Operands::Lea { dr, pc_offset9 } => Instruction::new_lea(dr.unwrap(), compute_offset(pc_offset9, current_location, &symbol_table)),
 
-                    Operands::St { sr, label } => Instruction::new_st(sr.unwrap(), compute_offset(label, current_location, &symbol_table)),
-                    Operands::Sti { sr, label } => Instruction::new_sti(sr.unwrap(), compute_offset(label, current_location, &symbol_table)),
+                    Operands::St { sr, pc_offset9 } => Instruction::new_st(sr.unwrap(), compute_offset(pc_offset9, current_location, &symbol_table)),
+                    Operands::Sti { sr, pc_offset9 } => Instruction::new_sti(sr.unwrap(), compute_offset(pc_offset9, current_location, &symbol_table)),
                     Operands::Str { sr, base, offset6 } => Instruction::new_str(sr.unwrap(), base.unwrap(), offset6.unwrap()),
                     
                     Operands::Not { dr, sr } => Instruction::new_not(dr.unwrap(), sr.unwrap()),
 
-                    Operands::Br { nzp, label, .. } => {
+                    Operands::Br { nzp, pc_offset9, .. } => {
                         let nzp = nzp.unwrap();
-                        Instruction::new_br(nzp.n, nzp.z, nzp.p, compute_offset(label, current_location, &symbol_table))
+                        Instruction::new_br(nzp.n, nzp.z, nzp.p, compute_offset(pc_offset9, current_location, &symbol_table))
                     }
 
                     Operands::Jmp { base } => Instruction::new_jmp(base.unwrap()),
-                    Operands::Jsr { label } => Instruction::new_jsr(compute_offset(label, current_location, &symbol_table)),
+                    Operands::Jsr { pc_offset11 } => Instruction::new_jsr(compute_offset(pc_offset11, current_location, &symbol_table)),
                     Operands::Jsrr { base } => Instruction::new_jsrr(base.unwrap()),
                     
                     Operands::Ret => Instruction::new_ret(),
@@ -157,8 +157,13 @@ pub fn construct_instructions(object: Object, symbol_table: HashMap<&str, Addr>)
     CompleteObject { orig, insns_or_values }
 }
 
-fn compute_offset(label: cst::Checked<&str>, location: Addr, symbol_table: &HashMap<&str, Addr>) -> SignedWord {
-    let label_location = symbol_table.get(label.unwrap()).unwrap().clone() as u32;
-    let offset_base = (location + 1) as u32;
-    (label_location - offset_base) as SignedWord
+fn compute_offset(pc_offset: cst::Checked<ImmOrLabel>, location: Addr, symbol_table: &HashMap<&str, Addr>) -> SignedWord {
+    match pc_offset.unwrap() {
+        ImmOrLabel::Label(label) => {
+            let label_location = symbol_table.get(label.unwrap()).unwrap().clone() as i64;
+            let offset_base = (location + 1) as i64;
+            (label_location - offset_base) as SignedWord
+        }
+        ImmOrLabel::Imm(immediate) => immediate.value.unwrap()
+    }
 }
