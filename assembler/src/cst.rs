@@ -1,5 +1,5 @@
 use lc3_isa::{Addr, SignedWord, check_signed_imm, Word};
-use crate::error::{ParseError, InvalidLabelReason, InvalidRegReason};
+use crate::error::{ParseError, InvalidLabelReason, InvalidRegReason, InvalidImmediateReason};
 use crate::lexer::Token;
 use crate::ir2_lines::{Line, OperationTokens, OperandTokens};
 use crate::ir3_unvalidated_objects::{UnvalidatedFile, UnvalidatedObject, UnvalidatedLine, UnvalidatedObjectContent};
@@ -267,19 +267,30 @@ impl CstParser {
     }
 
     fn validate_numeric_immediate<'input, T: Num>(&self, src: Token<'input>) -> Immediate<'input, T> {
-        let value = src.src.get(..=0).and_then(|src_head| {
-            let radix = match src_head {
+        let Token { src: str, span, .. } = src;
+        let value = if let Some(str_head) = str.get(..=0) {
+            let radix = match str_head {
                 "b" => Some(2),
                 "#" => Some(10),
                 "x" => Some(16),
                 _ => None
             };
-            if let (Some(radix), Some(src_tail)) = (radix, src.src.get(1..)) {
-                T::from_str_radix(src_tail, radix).ok()
+            if let Some(radix) = radix {
+                if let Some(src_tail) = src.src.get(1..) {
+                    T::from_str_radix(src_tail, radix)
+                        .map_err(|_| InvalidImmediateReason::Number { actual: src_tail.to_string() })
+                } else {
+                    Err(InvalidImmediateReason::NoNumber)
+                }
             } else {
-                None
+                Err(InvalidImmediateReason::RadixChar { actual: str_head.to_string() })
             }
-        }).ok_or(ParseError::Misc("Invalid numeric immediate.".to_string())); // TODO: make error message good.
+        } else {
+            Err(InvalidImmediateReason::NoChars)
+        }.map_err(|reason| ParseError::InvalidImmediate {
+            range: span,
+            reason
+        });
 
         Immediate { src, value }
     }

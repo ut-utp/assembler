@@ -23,6 +23,10 @@ pub enum ParseError {
         range: Span,
         reasons: Vec<InvalidLabelReason>,
     },
+    InvalidImmediate {
+        range: Span,
+        reason: InvalidImmediateReason
+    },
     HangingLabel {
         range: Span,
     },
@@ -44,6 +48,26 @@ impl Display for InvalidRegReason {
         match self {
             FirstChar => { write!(f, "didn't start with R") }
             Number => { write!(f, "didn't follow R with only 0-7") }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum InvalidImmediateReason {
+    NoChars,
+    RadixChar { actual: String },
+    NoNumber,
+    Number { actual: String },
+}
+
+impl Display for InvalidImmediateReason {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        use InvalidImmediateReason::*;
+        match self {
+            NoChars => { write!(f, "didn't have any characters") }
+            NoNumber => { write!(f, "didn't follow radix sign with number") }
+            RadixChar { actual } => { write!(f, "didn't use valid radix sign (was: {})", actual) }
+            Number { actual } => { write!(f, "couldn't parse number (was: {})", actual) }
         }
     }
 }
@@ -73,11 +97,12 @@ impl<'input> ParseError {
                 format!("invalid label, reasons -- {}", reasons.iter().map(InvalidLabelReason::to_string).join(", "))
             },
             InvalidReg { reason, .. } => {
-                format!("invalid register, {}", reason.to_string())
+                format!("invalid register, {}", reason)
             }
             Misc(message) => message.clone(),
             HangingLabel { .. } => { format!("hanging label") }
             InvalidLine  { .. } => { format!("invalid line")  }
+            InvalidImmediate { reason, .. } => { format!("invalid immediate, {}", reason) }
         }
     }
     
@@ -104,6 +129,7 @@ impl<'input> ParseError {
                     push_annotation!(range, "invalid line here");
                 }
             }
+            InvalidImmediate { range, .. } => { push_annotation!(range, "invalid immediate here"); }
             Misc(_) => {},
         }
         annotations
