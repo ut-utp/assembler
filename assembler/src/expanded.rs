@@ -104,6 +104,7 @@ pub fn construct_instructions(object: Object, symbol_table: HashMap<&str, Addr>)
     for op_or_value in object.ops_or_values {
         let insn_or_value = match op_or_value {
             OpOrValue::Operation(instruction_cst) => {
+                let nzp = instruction_cst.nzp.unwrap();
                 let insn = match instruction_cst.operands {
                     Operands::Add { dr, sr1, sr2_or_imm5 } => match sr2_or_imm5.unwrap() {
                         cst::Sr2OrImm5::Imm5(immediate) => Instruction::new_add_imm(dr.unwrap(), sr1.unwrap(), immediate.unwrap()),
@@ -125,7 +126,7 @@ pub fn construct_instructions(object: Object, symbol_table: HashMap<&str, Addr>)
                     
                     Operands::Not { dr, sr } => Instruction::new_not(dr.unwrap(), sr.unwrap()),
 
-                    Operands::Br { nzp, pc_offset9, .. } => {
+                    Operands::Br { pc_offset9, .. } => {
                         let nzp = nzp.unwrap();
                         Instruction::new_br(nzp.n, nzp.z, nzp.p, compute_offset(pc_offset9, current_location, &symbol_table))
                     }

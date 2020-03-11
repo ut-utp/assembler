@@ -102,23 +102,23 @@ impl<'input> Lexer<'input> {
     const PATTERNS: [(&'static str, TokenType); 34] = [
         (r"[^\S\r\n]+", Whitespace),
 
-        (r"ADD",  Op(Op::Opcode(Add))),
-        (r"AND",  Op(Op::Opcode(And))),
-        (r"BR",   Op(Op::Opcode(Br))),
-        (r"JMP",  Op(Op::Opcode(Jmp))),
-        (r"JSRR", Op(Op::Opcode(Jsrr))),
-        (r"JSR",  Op(Op::Opcode(Jsr))),
-        (r"LDI",  Op(Op::Opcode(Ldi))),
-        (r"LDR",  Op(Op::Opcode(Ldr))),
-        (r"LD",   Op(Op::Opcode(Ld))),
-        (r"LEA",  Op(Op::Opcode(Lea))),
-        (r"NOT",  Op(Op::Opcode(Not))),
-        (r"RET",  Op(Op::Opcode(Ret))),
-        (r"RTI",  Op(Op::Opcode(Rti))),
-        (r"STI",  Op(Op::Opcode(Sti))),
-        (r"STR",  Op(Op::Opcode(Str))),
-        (r"ST",   Op(Op::Opcode(St))),
-        (r"TRAP", Op(Op::Opcode(Trap))),
+        (r"ADD",      Op(Op::Opcode(Add))),
+        (r"AND",      Op(Op::Opcode(And))),
+        (r"BRn?z?p?", Op(Op::Opcode(Br))),
+        (r"JMP",      Op(Op::Opcode(Jmp))),
+        (r"JSRR",     Op(Op::Opcode(Jsrr))),
+        (r"JSR",      Op(Op::Opcode(Jsr))),
+        (r"LDI",      Op(Op::Opcode(Ldi))),
+        (r"LDR",      Op(Op::Opcode(Ldr))),
+        (r"LD",       Op(Op::Opcode(Ld))),
+        (r"LEA",      Op(Op::Opcode(Lea))),
+        (r"NOT",      Op(Op::Opcode(Not))),
+        (r"RET",      Op(Op::Opcode(Ret))),
+        (r"RTI",      Op(Op::Opcode(Rti))),
+        (r"STI",      Op(Op::Opcode(Sti))),
+        (r"STR",      Op(Op::Opcode(Str))),
+        (r"ST",       Op(Op::Opcode(St))),
+        (r"TRAP",     Op(Op::Opcode(Trap))),
 
         (r"GETC",  Op(Op::NamedTrap(Getc))),
         (r"OUT",   Op(Op::NamedTrap(Out))),
@@ -181,19 +181,25 @@ impl<'input> Iterator for Lexer<'input> {
             return None;
         }
 
+        let mut munches = Vec::new();
         for (pattern, token_type) in &self.patterns {
-            if let Some(found) = pattern.find(self.tail()) {
-                self.cur_pos += found.end();
-                let token = Token {
-                    src: found.as_str(),
-                    span: (start, self.cur_pos),
-                    ty: *token_type,
-                };
-                return Some(token);
+            if let Some(match_) = pattern.find(self.tail()) {
+                munches.push((match_, *token_type));
             }
         }
+        let (max_munch, token_type) = munches.iter()
+            .rev() // we want to break ties based on order in self.patterns, but max_by_key returns last match
+            .max_by_key(|munch| munch.0.end())
+            .expect("The lexer could not recognize some character pattern you provided. Please contact the maintainers."); // TODO: handle gracefully?
+        
+        self.cur_pos += max_munch.end();
+        let token = Token {
+            src: max_munch.as_str(),
+            span: (start, self.cur_pos),
+            ty: *token_type,
+        };
+        return Some(token);
 
-        unreachable!("The lexer could not recognize some character pattern you provided. Please contact the maintainers."); // TODO: handle gracefully?
     }
 }
 

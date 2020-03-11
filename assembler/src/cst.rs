@@ -38,6 +38,7 @@ pub type Separator<'input> = Token<'input>;
 pub struct Operation<'input> {
     pub label: Option<Label<'input>>,
     pub operator: Token<'input>,
+    pub nzp: Result<Option<ConditionCodes>, ParseError>,
     pub operands: Operands<'input>,
 
     pub separators: Vec<Separator<'input>>,
@@ -92,7 +93,7 @@ type PCOffset<'input> = Checked<'input, ImmOrLabel<'input>>;
 pub enum Operands<'input> {
     Add { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Checked<'input, Sr2OrImm5<'input>> },
     And { dr: Reg<'input>, sr1: Reg<'input>, sr2_or_imm5: Checked<'input, Sr2OrImm5<'input>> },
-    Br { nzp_src: Option<Token<'input>>, nzp: Result<ConditionCodes, ParseError>, pc_offset9: PCOffset<'input> },
+    Br { pc_offset9: PCOffset<'input> },
     Jmp { base: Reg<'input> },
     Jsr { pc_offset11: PCOffset<'input> },
     Jsrr { base: Reg<'input> },
@@ -167,6 +168,7 @@ impl CstParser {
         Operation {
             label: label.map(|l| self.validate_label(l)),
             operator,
+            nzp: self.validate_condition_codes(&operator),
             operands: self.validate_operand_tokens(operands),
             separators,
             whitespace,
@@ -189,13 +191,8 @@ impl CstParser {
                     sr1: self.validate_reg(sr1),
                     sr2_or_imm5: self.validate_sr2_or_imm5(sr2_or_imm5)
                 },
-            OperandTokens::Br { nzp, label } => {
-                let (nzp_src, nzp) = self.validate_condition_codes(nzp);
-                Operands::Br {
-                    nzp_src,
-                    nzp,
-                    pc_offset9: self.validate_imm_or_label(label, 9),
-                }
+            OperandTokens::Br { label } => {
+                Operands::Br { pc_offset9: self.validate_imm_or_label(label, 9), }
             },
             OperandTokens::Jmp { base } => Operands::Jmp { base: self.validate_reg(base) },
             OperandTokens::Jsr { label } => Operands::Jsr { pc_offset11: self.validate_imm_or_label(label, 11) },
@@ -349,38 +346,34 @@ impl CstParser {
         Label { src, value }
     }
 
-    fn validate_condition_codes<'input>(&self, src: Option<Token<'input>>) -> (Option<Token<'input>>, Result<ConditionCodes, ParseError>) {
-        let value = if let Some(token) = src {
-            self.validate_condition_codes_str(token.src)
-        } else {
-            Ok(ConditionCodes { n: true, z: true, p: true })
-        };
-        (src, value)
-    }
-
-    fn validate_condition_codes_str(&self, src: &str) -> Result<ConditionCodes, ParseError> {
-        let mut n = false;
-        let mut z = false;
-        let mut p = false;
-        for c in src.chars() {
-            match c {
-                // TODO: prettify with macro or non-iterative solution
-                'n' | 'N' => {
-                    if n { return Err(ParseError::Misc("Duplicate condition code n.".to_string())); }
-                    n = true;
-                },
-                'z' | 'Z' => {
-                    if z { return Err(ParseError::Misc("Duplicate condition code z.".to_string())); }
-                    z = true;
-                },
-                'p' | 'P' => {
-                    if p { return Err(ParseError::Misc("Duplicate condition code p.".to_string())); }
-                    p = true;
-                },
-                _ => { return Err(ParseError::Misc("Invalid condition codes.".to_string())) },
+    fn validate_condition_codes(&self, src: &Token) -> Result<Option<ConditionCodes>, ParseError> {
+        let str = src.src;
+        if str.to_uppercase().starts_with("BR") {
+            let mut n = false;
+            let mut z = false;
+            let mut p = false;
+            for c in str[2..].to_lowercase().chars() {
+                match c {
+                    // TODO: prettify with macro or non-iterative solution
+                    'n' => {
+                        if n { return Err(ParseError::Misc("Duplicate condition code n.".to_string())); }
+                        n = true;
+                    },
+                    'z' => {
+                        if z { return Err(ParseError::Misc("Duplicate condition code z.".to_string())); }
+                        z = true;
+                    },
+                    'p' => {
+                        if p { return Err(ParseError::Misc("Duplicate condition code p.".to_string())); }
+                        p = true;
+                    },
+                    _ => { return Err(ParseError::Misc("Invalid condition codes.".to_string())) },
+                }
             }
+            Ok(Some(ConditionCodes { n, z, p }))
+        } else {
+            Ok(None)
         }
-        Ok(ConditionCodes { n, z, p })
     }
 
     fn validate_blkw_immediate<'input>(&self, src: Token<'input>) -> Immediate<'input, Addr> {

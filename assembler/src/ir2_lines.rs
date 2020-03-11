@@ -90,7 +90,7 @@ impl<'input> OperationTokens<'input> {
 pub enum OperandTokens<'input> {
     Add { dr: Token<'input>, sr1: Token<'input>, sr2_or_imm5: Token<'input> },
     And { dr: Token<'input>, sr1: Token<'input>, sr2_or_imm5: Token<'input> },
-    Br { nzp: Option<Token<'input>>, label: Label<'input> },
+    Br { label: Label<'input> },
     Jmp { base: Token<'input> },
     Jsr { label: Label<'input> },
     Jsrr { base: Token<'input> },
@@ -136,12 +136,7 @@ impl<'input> OperandTokens<'input> {
                 tokens.push(sr1);
                 tokens.push(sr2_or_imm5);
             },
-            Br { nzp, label } => {
-                if let Some(nzp) = nzp {
-                    tokens.push(nzp);
-                }
-                tokens.push(label);
-            },
+            Br { label } => { tokens.push(label); },
             Jmp { base } => { tokens.push(base); },
             Jsr { label } => { tokens.push(label); },
             Jsrr { base } => { tokens.push(base); },
@@ -291,13 +286,7 @@ fn parse_operand_tokens<'input, T>(op: Op, tokens: &mut Peekable<T>, mut separat
         Op::Opcode(opcode) => match opcode {
             Opcode::Add => { fill_operands! { 3; Add { dr, sr1, sr2_or_imm5, }; tokens, separators } },
             Opcode::And => { fill_operands! { 3; And { dr, sr1, sr2_or_imm5, }; tokens, separators } },
-            Opcode::Br => { // Specially handled due to nzp
-                let nzp = parse_nzp(tokens)?;
-                let whitespace = parse_whitespace(tokens)?;
-                separators.extend(whitespace);
-                let label = parse_ambiguous(tokens)?;
-                OperandTokens::Br { nzp, label }
-            },
+            Opcode::Br => { fill_operands! { 1; Br { label, }; tokens, separators } },
             Opcode::Jmp  => { fill_operands! { 1; Jmp { base, }; tokens, separators } },
             Opcode::Jsr  => { fill_operands! { 1; Jsr { label, }; tokens, separators } },
             Opcode::Jsrr => { fill_operands! { 1; Jsrr { base, }; tokens, separators } },
@@ -359,22 +348,6 @@ fn parse_operation_tokens<'input, T>(mut tokens: &mut Peekable<T>, mut whitespac
             _ => Err(ParseError::Misc("Unexpected non-operator token at beginning of 'instruction'".to_string()))
         }
         None => Ok(None),
-    }
-}
-
-fn parse_nzp<'input, T>(tokens: &mut Peekable<T>) -> Result<Option<Token<'input>>, ParseError>
-    where T: Iterator<Item=Token<'input>>
-{
-    match tokens.peek() {
-        Some(&token) => match token.ty {
-            TokenType::Ambiguous => {
-                tokens.next();
-                Ok(Some(token))
-            },
-            TokenType::Whitespace => Ok(None),
-            _ => Err(ParseError::Misc("Found non-nzp token while parsing nzp.".to_string()))
-        },
-        None => Err(ParseError::Misc("Ran out of tokens while parsing nzp.".to_string())),
     }
 }
 

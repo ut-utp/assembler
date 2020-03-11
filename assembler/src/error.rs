@@ -195,13 +195,17 @@ fn extract_object_content_errors(object_content: ObjectContent) -> Vec<ParseErro
 fn extract_operation_errors(operation: Operation) -> Vec<ParseError> {
     let mut errors = Vec::new();
 
-    let Operation { label, operands, .. } = operation;
+    let Operation { label, operands, nzp, .. } = operation;
 
     if let Some(label) = label {
         label.extract_error_into(&mut errors);
     }
 
     errors.extend(extract_operands_errors(operands));
+    
+    if let Err(error) = nzp {
+        errors.push(error);
+    }
 
     errors
 }
@@ -221,10 +225,7 @@ fn extract_operands_errors(operands: Operands) -> Vec<ParseError> {
             sr1.extract_error_into(&mut errors);
             sr2_or_imm5.extract_error_into(&mut errors);
         },
-        Br { nzp, pc_offset9, .. } => {
-            if let Err(error) = nzp {
-                errors.push(error);
-            }
+        Br { pc_offset9 } => {
             pc_offset9.extract_error_into(&mut errors);
         },
         Jmp { base } => {
