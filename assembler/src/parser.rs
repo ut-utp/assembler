@@ -15,3 +15,12 @@ pub enum LeniencyLevel {
     Lenient,
     Strict,
 }
+
+impl LeniencyLevel {
+    pub fn long_labels_allowed(&self) -> bool {
+        match self {
+            LeniencyLevel::Lenient => true,
+            LeniencyLevel::Strict => false
+        }
+    }
+}

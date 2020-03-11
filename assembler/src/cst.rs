@@ -311,8 +311,12 @@ impl CstParser {
     fn validate_label<'input>(&self, src: Token<'input>) -> Label<'input> {
         let label = src.src;
 
-        let length = &label.len();
-        let valid_length = (1..=20).contains(length);
+        let length = label.len();
+        let valid_length = if self.leniency.long_labels_allowed() {
+            length >= 1
+        } else {
+            (1..=20).contains(&length)  
+        };
 
         let mut chars = label.chars();
         let first_char = chars.next();
@@ -322,23 +326,23 @@ impl CstParser {
         other_chars.retain(|&c| !(c.is_alphanumeric() || c == '_'));
         let other_chars_alphanumeric = other_chars.len() == 0;
 
-        let valid = valid_length && first_char_alphabetic && other_chars_alphanumeric;
-        let value = if valid {
+        let mut invalidation_reasons = Vec::new();
+        if !valid_length {
+            invalidation_reasons.push(InvalidLabelReason::Length { actual: length.clone() });
+        }
+        if !first_char_alphabetic {
+            invalidation_reasons.push(InvalidLabelReason::FirstChar { actual: first_char });
+        }
+        if !other_chars_alphanumeric {
+            invalidation_reasons.push(InvalidLabelReason::OtherChars { actual: other_chars.into_iter().collect::<String>() });
+        }
+        
+        let value = if invalidation_reasons.len() == 0 {
             Ok(label)
         } else {
-            let mut reasons = Vec::new();
-            if !valid_length {
-                reasons.push(InvalidLabelReason::Length { actual: length.clone() });
-            }
-            if !first_char_alphabetic {
-                reasons.push(InvalidLabelReason::FirstChar { actual: first_char });
-            }
-            if !other_chars_alphanumeric {
-                reasons.push(InvalidLabelReason::OtherChars { actual: other_chars.into_iter().collect::<String>() });
-            }
             Err(ParseError::InvalidLabel {
                 range: src.span,
-                reasons,
+                reasons: invalidation_reasons,
             })
         };
 
