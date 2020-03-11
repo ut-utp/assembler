@@ -118,7 +118,7 @@ impl<'input> ParseError {
                     Slice {
                         source,
                         origin,
-                        line_start: 0,
+                        line_start: 1,
                         fold: true,
                         annotations: self.annotations(),
                     }
