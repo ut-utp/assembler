@@ -39,6 +39,29 @@ fn load_store_medium() {
     );
 }
 
+#[test]
+fn pseudo_ops() {
+    test(
+        include_str!("inputs/pseudo_ops.asm"),
+        0x4000,
+        &[
+            0x0022,
+            0x0074,
+            0x0068,
+            0x0069,
+            0x0073,
+            0x005C,
+            0x0074,
+            0x0068,
+            0x0061,
+            0x0074,
+            0x0022,
+            0x0000,
+            0xBEEF,
+        ]
+    );
+}
+
 
 fn test(input: &str, orig: usize, expected_mem: &[Word]) {
     let lexer = Lexer::new(input);

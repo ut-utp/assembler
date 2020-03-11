@@ -48,9 +48,10 @@ pub fn expand_pseudo_ops(object: cst::Object) -> Object {
                 ops_or_values.extend(values);
             },
             Operands::Stringz { string } => {
-                for c in string.src.chars() { // TODO: handle escape chars (\\, \", others?)
+                for c in string.unwrap().chars() {
                     ops_or_values.push(OpOrValue::Value(c as Word));
                 }
+                ops_or_values.push(OpOrValue::Value(0)); // null-terminate
             },
             Operands::Fill { value } => {
                 ops_or_values.push(OpOrValue::Value(value.unwrap()));

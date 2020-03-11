@@ -118,7 +118,7 @@ pub enum Operands<'input> {
     Orig { origin: Immediate<'input, Addr> },
     Fill { value: Immediate<'input, Word> },
     Blkw { size_src: Token<'input>, size: Immediate<'input, Addr> }, // Addr used here to signify a number of locations. Max is number of possible Addrs.
-    Stringz { string: Token<'input> },
+    Stringz { string: Checked<'input, String> },
     End,
 }
 
@@ -232,7 +232,7 @@ impl CstParser {
             OperandTokens::Orig { origin } => Operands::Orig { origin: self.validate_numeric_immediate(origin) },
             OperandTokens::Fill { value } => Operands::Fill { value: self.validate_numeric_immediate(value) },
             OperandTokens::Blkw { size } => Operands::Blkw { size_src: size, size: self.validate_blkw_immediate(size) },
-            OperandTokens::Stringz { string } => Operands::Stringz { string }, // TODO: validate ASCII?
+            OperandTokens::Stringz { string } => Operands::Stringz { string: self.validate_string(string) },
             OperandTokens::End => Operands::End,
         }
     }
@@ -388,6 +388,19 @@ impl CstParser {
             src,
             value: src.src.parse().map_err(|_| ParseError::Misc("Invalid BLKW immediate.".to_string()))
         }
+    }
+    
+    fn validate_string<'input>(&self, src: Token<'input>) -> Checked<'input, String> {
+        let mut string = src.src.to_string();
+        // remove start and end quote
+        string.pop();
+        string.remove(0);
+        // remove escape characters
+        string = string
+            .replace(r#"\""#, r#"""#)
+            .replace(r#"\\"#, r#"\"#);
+        let value = Ok(string);
+        Checked { src, value }
     }
 }
 
