@@ -1,4 +1,4 @@
-use crate::lexer::{Token, TokenType, Opcode, Op, NamedTrap, PseudoOp};
+use crate::lexer::{Token, TokenType, Opcode, Op, NamedTrap, PseudoOp, Span};
 use crate::ir1_simple_lines::{SimpleLines, SimpleLine};
 use std::iter::Peekable;
 use crate::error::ParseError;
@@ -14,6 +14,33 @@ pub struct Line<'input> {
     pub newline: Option<Token<'input>>,
 }
 
+impl<'input> Line<'input> {
+    pub fn span(&self) -> Option<Span> {
+        let tokens = self.tokens();
+        let start = tokens.iter().map(|token| token.span.0).min();
+        let end = tokens.iter().map(|token| token.span.1).max();
+        if let (Some(start), Some(end)) = (start, end) {
+            Some((start, end))
+        } else {
+            None
+        }
+    }
+    
+    fn tokens(&self) -> Vec<&Token> {
+        let mut tokens = Vec::new();
+        let Line { content, whitespace, comment, newline } = self;
+        tokens.extend(content.tokens());
+        tokens.extend(whitespace);
+        if let Some(comment) = comment {
+            tokens.push(comment);
+        }
+        if let Some(newline) = newline {
+            tokens.push(newline);
+        }
+        tokens
+    }
+}
+
 pub type Label<'input> = Token<'input>;
 
 #[derive(Clone, Debug)]
@@ -22,11 +49,41 @@ pub enum LineContent<'input> {
     Invalid(Vec<Token<'input>>)
 }
 
+impl<'input> LineContent<'input> {
+    fn tokens(&self) -> Vec<&Token> {
+        match self {
+            LineContent::Valid(maybe_label, maybe_operation_tokens) => {
+                let mut tokens = Vec::new();
+                if let Some(label) = maybe_label {
+                    tokens.push(label);
+                }
+                if let Some(operation_tokens) = maybe_operation_tokens {
+                    tokens.extend(operation_tokens.tokens())
+                }
+                tokens
+            }
+            LineContent::Invalid(tokens) => tokens.iter().collect()
+        }
+    }
+}
+
+
 #[derive(Clone, Debug)]
 pub struct OperationTokens<'input> {
     pub operator: Token<'input>,
     pub operands: OperandTokens<'input>,
     pub separators: Vec<Token<'input>>, // To include internal whitespace, but not surrounding
+}
+
+impl<'input> OperationTokens<'input> {
+    fn tokens(&self) -> Vec<&Token> {
+        let mut tokens = Vec::new();
+        let OperationTokens { operator, operands, separators } = self;
+        tokens.push(operator);
+        tokens.extend(operands.tokens());
+        tokens.extend(separators);
+        tokens
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -61,6 +118,85 @@ pub enum OperandTokens<'input> {
     Blkw { size: Token<'input> },
     Stringz { string: Token<'input> },
     End,
+}
+
+impl<'input> OperandTokens<'input> {
+    fn tokens(&self) -> Vec<&Token> {
+        use OperandTokens::*;
+        
+        let mut tokens = Vec::new();
+        match self {
+            Add { dr, sr1, sr2_or_imm5 } => {
+                tokens.push(dr);
+                tokens.push(sr1);
+                tokens.push(sr2_or_imm5);
+            },
+            And { dr, sr1, sr2_or_imm5 } => {
+                tokens.push(dr);
+                tokens.push(sr1);
+                tokens.push(sr2_or_imm5);
+            },
+            Br { nzp, label } => {
+                if let Some(nzp) = nzp {
+                    tokens.push(nzp);
+                }
+                tokens.push(label);
+            },
+            Jmp { base } => { tokens.push(base); },
+            Jsr { label } => { tokens.push(label); },
+            Jsrr { base } => { tokens.push(base); },
+            Ld { dr, label } => { 
+                tokens.push(dr);
+                tokens.push(label);
+            },
+            Ldi { dr, label } => {
+                tokens.push(dr);
+                tokens.push(label);
+            },
+            Ldr { dr, base, offset6 } => {
+                tokens.push(dr);
+                tokens.push(base);
+                tokens.push(offset6);
+            },
+            Lea { dr, label } => {
+                tokens.push(dr);
+                tokens.push(label);
+            },
+            Not { dr, sr } => {
+                tokens.push(dr);
+                tokens.push(sr);
+            },
+            St { sr, label, } => {
+                tokens.push(sr);
+                tokens.push(label);
+            },
+            Sti { sr, label, } => {
+                tokens.push(sr);
+                tokens.push(label);
+            },
+            Str { sr, base, offset6, } => {
+                tokens.push(sr);
+                tokens.push(base);
+                tokens.push(offset6);
+            },
+            Trap { trap_vec } => { tokens.push(trap_vec); },
+            Orig { origin } => { tokens.push(origin); },
+            Fill { value } => { tokens.push(value); },
+            Blkw { size } => { tokens.push(size); },
+            Stringz { string } => { tokens.push(string); },
+            
+            Ret
+            | Rti
+            | Getc 
+            | Out 
+            | Puts 
+            | In
+            | Putsp
+            | Halt
+            | End => {},
+        }
+        tokens
+    }
 }
 
 pub fn parse_lines(simple_lines: SimpleLines) -> Lines {
