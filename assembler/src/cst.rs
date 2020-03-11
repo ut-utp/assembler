@@ -81,6 +81,12 @@ pub enum ImmOrLabel<'input> {
 }
 
 #[derive(Clone, Debug)]
+pub enum UnsignedImmOrLabel<'input> {
+    Imm(Immediate<'input, Word>),
+    Label(Label<'input>),
+}
+
+#[derive(Clone, Debug)]
 pub struct ConditionCodes {
     pub n: bool,
     pub z: bool,
@@ -117,7 +123,7 @@ pub enum Operands<'input> {
     Halt,
 
     Orig { origin: Immediate<'input, Addr> },
-    Fill { value: Immediate<'input, Word> },
+    Fill { value: Checked<'input, UnsignedImmOrLabel<'input>> },
     Blkw { size_src: Token<'input>, size: Immediate<'input, Addr> }, // Addr used here to signify a number of locations. Max is number of possible Addrs.
     Stringz { string: Checked<'input, String> },
     End,
@@ -227,7 +233,7 @@ impl CstParser {
             OperandTokens::Halt => Operands::Halt,
 
             OperandTokens::Orig { origin } => Operands::Orig { origin: self.validate_numeric_immediate(origin) },
-            OperandTokens::Fill { value } => Operands::Fill { value: self.validate_numeric_immediate(value) },
+            OperandTokens::Fill { value } => Operands::Fill { value: self.validate_unsigned_imm_or_label(value) },
             OperandTokens::Blkw { size } => Operands::Blkw { size_src: size, size: self.validate_blkw_immediate(size) },
             OperandTokens::Stringz { string } => Operands::Stringz { string: self.validate_string(string) },
             OperandTokens::End => Operands::End,
@@ -310,6 +316,19 @@ impl CstParser {
             Ok(ImmOrLabel::Label(label))
         } else if let Immediate { value: Ok(_), .. } = imm {
             Ok(ImmOrLabel::Imm(imm))
+        } else {
+            Err(ParseError::Misc("Invalid as label and as immediate.".to_string()))
+        };
+        Checked { src, value }
+    }
+    
+    fn validate_unsigned_imm_or_label<'input>(&self, src: Token<'input>) -> Checked<'input, UnsignedImmOrLabel<'input>>  {
+        let label = self.validate_label(src);
+        let imm = self.validate_numeric_immediate(src);
+        let value = if let Immediate { value: Ok(_), .. } = imm {
+            Ok(UnsignedImmOrLabel::Imm(imm))
+        } else if let Label { value: Ok(_), .. } = label {
+            Ok(UnsignedImmOrLabel::Label(label))
         } else {
             Err(ParseError::Misc("Invalid as label and as immediate.".to_string()))
         };

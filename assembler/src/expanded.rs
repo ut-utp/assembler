@@ -1,6 +1,6 @@
 // For expanded pseudo-op structures
 use crate::cst;
-use crate::cst::{Operands, ImmOrLabel};
+use crate::cst::{Operands, ImmOrLabel, UnsignedImmOrLabel};
 use crate::error::MemoryError;
 use lc3_isa;
 use lc3_isa::{Word, SignedWord};
@@ -53,9 +53,6 @@ pub fn expand_pseudo_ops(object: cst::Object) -> Object {
                 }
                 ops_or_values.push(OpOrValue::Value(0)); // null-terminate
             },
-            Operands::Fill { value } => {
-                ops_or_values.push(OpOrValue::Value(value.unwrap()));
-            },
             Operands::End => { /* ignore */ },
             _ => {
                 ops_or_values.push(OpOrValue::Operation(operation));
@@ -103,6 +100,16 @@ pub fn construct_instructions(object: Object, symbol_table: HashMap<&str, Addr>)
     let mut insns_or_values = Vec::new();
     for op_or_value in object.ops_or_values {
         let insn_or_value = match op_or_value {
+            OpOrValue::Operation(cst::Operation { operands: Operands::Fill { value }, .. }) => {
+                let value = match value.unwrap() {
+                    UnsignedImmOrLabel::Imm(immediate) => immediate.unwrap(),
+                    UnsignedImmOrLabel::Label(label) => {
+                        let label = label.unwrap();
+                        symbol_table.get(label).unwrap().clone()
+                    },
+                };
+                InsnOrValue::Value(value)
+            },
             OpOrValue::Operation(instruction_cst) => {
                 let nzp = instruction_cst.nzp.unwrap();
                 let insn = match instruction_cst.operands {
@@ -139,12 +146,12 @@ pub fn construct_instructions(object: Object, symbol_table: HashMap<&str, Addr>)
                     Operands::Rti => Instruction::new_rti(),
                     
                     Operands::Trap { trap_vec } => Instruction::new_trap(trap_vec.unwrap()),
-                    Operands::Getc  => Instruction::new_trap(0x0020),
-                    Operands::Out   => Instruction::new_trap(0x0021),
-                    Operands::Puts  => Instruction::new_trap(0x0022),
-                    Operands::In    => Instruction::new_trap(0x0023),
-                    Operands::Putsp => Instruction::new_trap(0x0024),
-                    Operands::Halt  => Instruction::new_trap(0x0025),
+                    Operands::Getc  => Instruction::new_trap(0x20),
+                    Operands::Out   => Instruction::new_trap(0x21),
+                    Operands::Puts  => Instruction::new_trap(0x22),
+                    Operands::In    => Instruction::new_trap(0x23),
+                    Operands::Putsp => Instruction::new_trap(0x24),
+                    Operands::Halt  => Instruction::new_trap(0x25),
 
                     _ => unreachable!() // TODO: restructure enum to avoid this
                 };
