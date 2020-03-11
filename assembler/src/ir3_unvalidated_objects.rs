@@ -112,7 +112,7 @@ fn parse_unvalidated_object_content<'input, T>(lines: &mut Peekable<T>) -> Resul
                 let Line { content, whitespace: line_whitespace, comment, newline } = line;
 
                 if hanging_label.is_some() {
-                    if let LineContent::Valid(None, Some(_)) = &content {
+                    if let LineContent::Valid(None, _) = &content {
                     } else {
                         hanging_labels.push(hanging_label.take().unwrap());
                     }
