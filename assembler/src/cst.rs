@@ -330,7 +330,7 @@ impl CstParser {
         } else if let Label { value: Ok(_), .. } = label {
             Ok(UnsignedImmOrLabel::Label(label))
         } else {
-            Err(ParseError::Misc("Invalid as label and as immediate.".to_string()))
+            Err(ParseError::Misc("Invalid as label and as unsigned immediate.".to_string()))
         };
         Checked { src, value }
     }

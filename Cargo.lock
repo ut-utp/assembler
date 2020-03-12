@@ -139,6 +139,7 @@ dependencies = [
  "clap",
  "itertools",
  "lc3-isa",
+ "lc3-os",
  "lc3-shims",
  "num-traits",
  "pretty_assertions",
@@ -146,9 +147,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lc3-baseline-sim"
+version = "0.1.0"
+source = "git+https://github.com/ut-utp/prototype#5953f604cbc2bf33e88220eedd08e33fd95a1282"
+dependencies = [
+ "lc3-isa",
+ "lc3-macros",
+ "lc3-traits",
+ "static_assertions",
+]
+
+[[package]]
 name = "lc3-isa"
 version = "0.1.0"
-source = "git+https://github.com/ut-utp/prototype#2aaf7d083b5ff0f1ecde52084fc9c1da965d9d8c"
+source = "git+https://github.com/ut-utp/prototype#5953f604cbc2bf33e88220eedd08e33fd95a1282"
 dependencies = [
  "lc3-macros",
  "serde",
@@ -158,7 +170,7 @@ dependencies = [
 [[package]]
 name = "lc3-macros"
 version = "0.1.0"
-source = "git+https://github.com/ut-utp/prototype#2aaf7d083b5ff0f1ecde52084fc9c1da965d9d8c"
+source = "git+https://github.com/ut-utp/prototype#5953f604cbc2bf33e88220eedd08e33fd95a1282"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -166,9 +178,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "lc3-os"
+version = "0.1.0"
+source = "git+https://github.com/ut-utp/prototype#5953f604cbc2bf33e88220eedd08e33fd95a1282"
+dependencies = [
+ "lazy_static",
+ "lc3-baseline-sim",
+ "lc3-isa",
+ "lc3-macros",
+ "lc3-traits",
+]
+
+[[package]]
 name = "lc3-shims"
 version = "0.1.0"
-source = "git+https://github.com/ut-utp/prototype#2aaf7d083b5ff0f1ecde52084fc9c1da965d9d8c"
+source = "git+https://github.com/ut-utp/prototype#5953f604cbc2bf33e88220eedd08e33fd95a1282"
 dependencies = [
  "byteorder",
  "lc3-isa",
@@ -181,12 +205,13 @@ dependencies = [
 [[package]]
 name = "lc3-traits"
 version = "0.1.0"
-source = "git+https://github.com/ut-utp/prototype#2aaf7d083b5ff0f1ecde52084fc9c1da965d9d8c"
+source = "git+https://github.com/ut-utp/prototype#5953f604cbc2bf33e88220eedd08e33fd95a1282"
 dependencies = [
  "lc3-isa",
  "lc3-macros",
  "log",
  "serde",
+ "static_assertions",
 ]
 
 [[package]]

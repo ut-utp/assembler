@@ -4,7 +4,7 @@ use lc3_isa::ADDR_SPACE_SIZE_IN_WORDS;
 
 use lc3_isa::util::MemoryDump;
 
-pub fn assemble<'input, O>(objects: O) -> MemoryDump
+pub fn assemble<'input, O>(objects: O, background: Option<MemoryDump>) -> MemoryDump
     where O: IntoIterator<Item=cst::Object<'input>>
 {
     let expanded_objects = objects.into_iter().map(expand_pseudo_ops).collect();
@@ -16,7 +16,7 @@ pub fn assemble<'input, O>(objects: O) -> MemoryDump
         })
         .collect();
 
-    let mut memory = [0x0000; ADDR_SPACE_SIZE_IN_WORDS];
+    let mut memory = background.unwrap_or(MemoryDump([0x0000; ADDR_SPACE_SIZE_IN_WORDS]));
     for complete_object in complete_objects {
         let mut i = complete_object.orig as usize;
         for insn_or_value in complete_object.insns_or_values {
@@ -28,5 +28,5 @@ pub fn assemble<'input, O>(objects: O) -> MemoryDump
         }
     }
 
-    MemoryDump(memory)
+    memory
 }
