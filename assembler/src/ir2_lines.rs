@@ -201,7 +201,7 @@ pub fn parse_lines(simple_lines: SimpleLines) -> Lines {
 }
 
 fn parse_line(simple_line: SimpleLine) -> Line {
-    let SimpleLine { content: old_content, comment, newline } = simple_line;
+    let SimpleLine { content: old_content, comment, newline, .. } = simple_line;
     let backup = old_content.clone();
 
     let mut tokens = old_content.into_iter().peekable();
