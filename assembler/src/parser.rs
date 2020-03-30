@@ -11,6 +11,7 @@ pub fn parse(tokens: Lexer, leniency: LeniencyLevel) -> File {
     CstParser { leniency }.parse_cst(ir3)
 }
 
+// TODO: impl Default?
 pub enum LeniencyLevel {
     Lenient,
     Strict,
