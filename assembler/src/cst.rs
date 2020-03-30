@@ -41,6 +41,7 @@ pub struct Operation<'input> {
     pub nzp: Result<Option<ConditionCodes>, ParseError>,
     pub operands: Operands<'input>,
 
+    pub src_lines: Vec<String>,
     pub separators: Vec<Separator<'input>>,
     pub whitespace: Vec<Token<'input>>,
     pub comments: Vec<Token<'input>>,
@@ -169,7 +170,7 @@ impl CstParser {
             whitespace,
             comments,
             newlines,
-            ..
+            src_lines,
         } = line.clone();
 
         Operation {
@@ -180,7 +181,8 @@ impl CstParser {
             separators,
             whitespace,
             comments,
-            newlines
+            newlines,
+            src_lines,
         }
     }
 

@@ -85,6 +85,7 @@ mod tests {
         let simple_lines = parse_simple_lines(lexer);
         let SimpleLine { src, content, comment, newline } = simple_lines.get(0).unwrap();
         assert_eq!(*src, "ADD ; test\n".to_string());
+        assert_eq!(content.len(), 2);
         assert!(comment.is_some());
         assert!(newline.is_some());
 
