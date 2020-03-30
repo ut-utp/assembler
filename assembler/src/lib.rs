@@ -14,6 +14,8 @@ pub mod ir3_unvalidated_objects;
 pub mod cst;
 pub mod expanded;
 
+pub mod complete;
+
 pub mod assembler;
 
 
