@@ -8,6 +8,7 @@ pub type Lines<'input> = Vec<Line<'input>>;
 
 #[derive(Clone, Debug)]
 pub struct Line<'input> {
+    pub src: String,
     pub content: LineContent<'input>,
     pub whitespace: Vec<Token<'input>>, // Only includes whitespace around operation
     pub comment: Option<Token<'input>>,
@@ -28,7 +29,7 @@ impl<'input> Line<'input> {
     
     fn tokens(&self) -> Vec<&Token> {
         let mut tokens = Vec::new();
-        let Line { content, whitespace, comment, newline } = self;
+        let Line { content, whitespace, comment, newline, .. } = self;
         tokens.extend(content.tokens());
         tokens.extend(whitespace);
         if let Some(comment) = comment {
@@ -201,7 +202,7 @@ pub fn parse_lines(simple_lines: SimpleLines) -> Lines {
 }
 
 fn parse_line(simple_line: SimpleLine) -> Line {
-    let SimpleLine { content: old_content, comment, newline, .. } = simple_line;
+    let SimpleLine { content: old_content, comment, newline, src, } = simple_line;
     let backup = old_content.clone();
 
     let mut tokens = old_content.into_iter().peekable();
@@ -214,7 +215,7 @@ fn parse_line(simple_line: SimpleLine) -> Line {
         |operation_tokens| { LineContent::Valid(label, operation_tokens) }
     );
     skip_and_collect_whitespace(&mut tokens, &mut whitespace);
-    Line { content, whitespace, comment, newline, }
+    Line { content, whitespace, comment, newline, src, }
 }
 
 fn parse_ambiguous<'input, T>(tokens: &mut Peekable<T>) -> Result<Token<'input>, ParseError>

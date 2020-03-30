@@ -168,7 +168,8 @@ impl CstParser {
             },
             whitespace,
             comments,
-            newlines
+            newlines,
+            ..
         } = line.clone();
 
         Operation {
