@@ -278,6 +278,16 @@ impl CstParser {
     fn validate_numeric_immediate<'input, T: Num>(&self, src: Token<'input>) -> Immediate<'input, T> {
         let Token { src: str, span, .. } = src;
         let value = if let Some(str_head) = str.get(..=0) {
+
+            // This is a job for `matches!{ }` but alas; we're at the mercy of
+            // our MSRV.
+            let (str_head, offset) = match str.get(0..2) {
+                Some("0b") | Some("0x") => (str.get(1..2).unwrap(), 2),
+                Some(_) => (str_head, 1),
+                // If we don't have two chars, just pass it along?
+                None => (str_head, 1),
+            };
+
             let radix = match str_head {
                 "b" => Some(2),
                 "#" => Some(10),
@@ -285,7 +295,7 @@ impl CstParser {
                 _ => None
             };
             if let Some(radix) = radix {
-                if let Some(src_tail) = src.src.get(1..) {
+                if let Some(src_tail) = src.src.get(offset..) {
                     T::from_str_radix(src_tail, radix)
                         .map_err(|_| InvalidImmediateReason::Number { actual: src_tail.to_string() })
                 } else {
@@ -430,3 +440,30 @@ impl CstParser {
     }
 }
 
+#[cfg(test)]
+mod immediate_tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    fn single_test<N: core::fmt::Debug + Num>(num: &str, actual: N)  {
+        let p = CstParser { leniency: LeniencyLevel::Lenient };
+
+        let tok = Token { src: num, span: (0, 0), ty: crate::lexer::TokenType::Ambiguous };
+
+        assert_eq!(actual, p.validate_numeric_immediate(tok).value.unwrap());
+    }
+
+    #[test]
+    fn regular() {
+        single_test("0x123", 0x123);
+        single_test("0x0123", 0x0123);
+        single_test("0b0101", 0b0101);
+    }
+
+    #[test]
+    fn patt_style() {
+        single_test("#100", 100);
+        single_test("x456", 0x456);
+        single_test("b0101", 0b0101);
+    }
+}
