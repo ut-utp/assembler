@@ -58,7 +58,7 @@ impl<'input, T> Checked<'input, T> {
     pub fn unwrap(self) -> T {
         self.value.unwrap()
     }
-    
+
     pub fn extract_error_into(self, errors: &mut Vec<ParseError>) {
         if let Err(error) = self.value {
             errors.push(error);
@@ -278,9 +278,6 @@ impl CstParser {
     fn validate_numeric_immediate<'input, T: Num>(&self, src: Token<'input>) -> Immediate<'input, T> {
         let Token { src: str, span, .. } = src;
         let value = if let Some(str_head) = str.get(..=0) {
-
-            // This is a job for `matches!{ }` but alas; we're at the mercy of
-            // our MSRV.
             let (str_head, offset) = match str.get(0..2) {
                 Some("0b") | Some("0x") => (str.get(1..2).unwrap(), 2),
                 Some(_) => (str_head, 1),
@@ -321,7 +318,7 @@ impl CstParser {
             .ok_or(ParseError::Misc("Invalid signed word immediate".to_string()));
         Immediate { src, value }
     }
-    
+
     fn validate_imm_or_label<'input>(&self, src: Token<'input>, num_bits: u32) -> Checked<'input, ImmOrLabel<'input>>  {
         let label = self.validate_label(src);
         let imm = self.validate_signed_immediate(src, num_bits);
@@ -334,7 +331,7 @@ impl CstParser {
         };
         Checked { src, value }
     }
-    
+
     fn validate_unsigned_imm_or_label<'input>(&self, src: Token<'input>) -> Checked<'input, UnsignedImmOrLabel<'input>>  {
         let label = self.validate_label(src);
         let imm = self.validate_numeric_immediate(src);
@@ -355,7 +352,7 @@ impl CstParser {
         let valid_length = if self.leniency.long_labels_allowed() {
             length >= 1
         } else {
-            (1..=20).contains(&length)  
+            (1..=20).contains(&length)
         };
 
         let mut chars = label.chars();
@@ -376,7 +373,7 @@ impl CstParser {
         if !other_chars_alphanumeric {
             invalidation_reasons.push(InvalidLabelReason::OtherChars { actual: other_chars.into_iter().collect::<String>() });
         }
-        
+
         let value = if invalidation_reasons.len() == 0 {
             Ok(label)
         } else {
@@ -425,7 +422,7 @@ impl CstParser {
             value: src.src.parse().map_err(|_| ParseError::Misc("Invalid BLKW immediate.".to_string()))
         }
     }
-    
+
     fn validate_string<'input>(&self, src: Token<'input>) -> Checked<'input, String> {
         let mut string = src.src.to_string();
         // remove start and end quote
