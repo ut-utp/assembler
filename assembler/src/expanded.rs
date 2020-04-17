@@ -1,6 +1,6 @@
 // For expanded pseudo-op structures
 use crate::cst;
-use crate::cst::{Operands, ImmOrLabel, UnsignedImmOrLabel};
+use crate::cst::{Operands, ImmOrLabel, UnsignedImmOrLabel, Checked};
 use crate::error::MemoryError;
 use lc3_isa;
 use lc3_isa::{Word, SignedWord};
@@ -14,7 +14,7 @@ pub type File<'input> = Vec<cst::Object<'input>>;
 
 pub struct Object<'input> {
     orig: Addr,
-    ops_or_values: Vec<OpOrValue<'input>>,
+    ops_or_values: Vec<(Option<Label<'input>>, OpOrValue<'input>)>,
 }
 
 #[derive(Clone)]
@@ -67,25 +67,32 @@ pub fn expand_pseudo_ops(object: cst::Object) -> Object {
 
     let mut ops_or_values = Vec::new();
     for operation in content.operations {
+        let label = operation.label.clone().map(Checked::unwrap);
+        let mut values = Vec::new();
         match operation.operands {
             Operands::Blkw { size, .. } => {
                 let num_values = size.unwrap() as usize;
-                let values = repeat(OpOrValue::Value(0)).take(num_values);
-                ops_or_values.extend(values);
+                let block = repeat((None, OpOrValue::Value(0))).take(num_values);
+                values.extend(block);
             },
             Operands::Stringz { string } => {
                 for c in string.unwrap().chars() {
-                    ops_or_values.push(OpOrValue::Value(c as Word));
+                    values.push((None, OpOrValue::Value(c as Word)));
                 }
-                ops_or_values.push(OpOrValue::Value(0)); // null-terminate
+                values.push((None, OpOrValue::Value(0))); // null-terminate
             },
             Operands::End => { /* ignore */ },
             _ => {
-                ops_or_values.push(OpOrValue::Operation(operation));
+                values.push((None, OpOrValue::Operation(operation)));
             },
         };
+        let first = values.get_mut(0);
+        if let Some(first_value) = first { // TODO: how to handle other case?
+            first_value.0 = label;
+        }
+        ops_or_values.extend(values);
     }
-    
+
     Object { orig, ops_or_values }
 }
 
@@ -93,8 +100,8 @@ pub fn build_symbol_table<'input>(object: &Object<'input>) -> Result<HashMap<&'i
     let mut symbol_table = HashMap::new();
     let mut current_location = object.orig;
     for op_or_value in object.ops_or_values.iter() {
-        if let OpOrValue::Operation(cst::Operation { label: Some(label), .. }) = op_or_value {
-            let other_location = symbol_table.insert(label.clone().unwrap(), current_location);
+        if let Some(label) = op_or_value.0 {
+            let other_location = symbol_table.insert(label.clone(), current_location);
             if let Some(_) = other_location {
                 return Err(MemoryError("Duplicate label at different location.".to_string()))
             }
@@ -125,7 +132,7 @@ pub fn construct_instructions<'input>(object: Object, symbol_table: HashMap<&'in
     let mut current_location = object.orig;
     let mut insns_or_values = Vec::new();
     for op_or_value in object.ops_or_values {
-        let (insn_or_value, src_lines) = match op_or_value {
+        let (insn_or_value, src_lines) = match op_or_value.1 {
             OpOrValue::Operation(cst::Operation { operands: Operands::Fill { value }, src_lines, .. }) => {
                 let value = match value.unwrap() {
                     UnsignedImmOrLabel::Imm(immediate) => immediate.unwrap(),
@@ -199,7 +206,9 @@ pub fn construct_instructions<'input>(object: Object, symbol_table: HashMap<&'in
 fn compute_offset(pc_offset: cst::Checked<ImmOrLabel>, location: Addr, symbol_table: &HashMap<&str, Addr>) -> SignedWord {
     match pc_offset.unwrap() {
         ImmOrLabel::Label(label) => {
-            let label_location = symbol_table.get(label.unwrap()).unwrap().clone() as i64;
+            let label = label.unwrap();
+            let label_location = symbol_table.get(label).unwrap().clone();
+            let label_location = label_location as i64;
             let offset_base = (location + 1) as i64;
             (label_location - offset_base) as SignedWord
         }

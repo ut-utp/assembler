@@ -39,12 +39,10 @@ num-traits = "0.2.11"
 annotate-snippets = "0.8.0"
 clap = "2.33.0"
 
-lc3-isa = { git = "https://github.com/ut-utp/prototype", branch = "master", version = "0.1.0", default-features = false }
-# TODO: ^ eventually don't pull this from git
-lc3-shims = { git = "https://github.com/ut-utp/prototype", branch = "master", version = "0.1.0", default-features = false }
-# TODO: ^ or this
-lc3-os = { git = "https://github.com/ut-utp/prototype", branch = "master", version = "0.1.0", default-features = false }
-# TODO: ^ or this
+lc3-isa = { git = "https://github.com/ut-utp/prototype", branch = "feat-trap-tests", version = "0.1.0", default-features = false }
+lc3-shims = { git = "https://github.com/ut-utp/prototype", branch = "feat-trap-tests", version = "0.1.0", default-features = false }
+lc3-os = { git = "https://github.com/ut-utp/prototype", branch = "feat-trap-tests", version = "0.1.0", default-features = false }
+# TODO: ^ eventually don't pull these from git
 
 [dev-dependencies]
 pretty_assertions = "0.6.1"

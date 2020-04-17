@@ -482,7 +482,8 @@ impl CstParser {
         // remove escape characters
         string = string
             .replace(r#"\""#, r#"""#)
-            .replace(r#"\\"#, r#"\"#);
+            .replace(r#"\\"#, r#"\"#)
+            .replace(r#"\n"#, "\n");
         let value = Ok(string);
         Checked { src, value }
     }
