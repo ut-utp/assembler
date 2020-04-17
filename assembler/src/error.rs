@@ -7,6 +7,7 @@ use itertools::Itertools;
 use crate::cst;
 use crate::cst::{Object, ObjectContent, Operation, Operands};
 use lc3_isa::SignedWord;
+use crate::ir2_lines::LineContent::Invalid;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LexError {
@@ -38,6 +39,11 @@ pub enum ParseError {
         range: Span,
         invalid_reg_reason: InvalidRegReason,
         invalid_imm5_reason: InvalidImmediateReason,
+    },
+    InvalidLabelOrImmediate {
+        range: Span,
+        invalid_label_reasons: Vec<InvalidLabelReason>,
+        invalid_immediate_reason: InvalidImmediateReason,
     },
     Misc(String),
 }
@@ -117,6 +123,13 @@ impl<'input> ParseError {
                          invalid as immediate because: {}",
                         invalid_reg_reason, invalid_imm5_reason)
             }
+            InvalidLabelOrImmediate { invalid_label_reasons, invalid_immediate_reason, .. } => {
+                format!("invalid label or immediate,\n\
+                         invalid as label because: {}\n\
+                         invalid as immediate because: {}",
+                        invalid_label_reasons.iter().map(InvalidLabelReason::to_string).join(", "),
+                        invalid_immediate_reason)
+            }
         }
     }
     
@@ -145,6 +158,7 @@ impl<'input> ParseError {
             }
             InvalidImmediate { range, .. } => { push_annotation!(range, "invalid immediate here"); }
             InvalidRegOrImm5 { range, .. } => { push_annotation!(range, "invalid register or immediate here"); }
+            InvalidLabelOrImmediate { range, .. } => { push_annotation!(range, "invalid label or immediate here"); }
             Misc(_) => {},
         }
         annotations

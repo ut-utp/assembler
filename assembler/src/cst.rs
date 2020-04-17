@@ -349,7 +349,19 @@ impl CstParser {
         } else if let Immediate { value: Ok(_), .. } = imm {
             Ok(ImmOrLabel::Imm(imm))
         } else {
-            Err(ParseError::Misc("Invalid as label and as immediate.".to_string()))
+            if let Label { value: Err(ParseError::InvalidLabel { reasons: invalid_label_reasons, .. }), .. } = label {
+                if let Immediate { value: Err(ParseError::InvalidImmediate { reason: invalid_immediate_reason, .. }), .. } = imm {
+                    Err(ParseError::InvalidLabelOrImmediate {
+                        range: src.span,
+                        invalid_label_reasons,
+                        invalid_immediate_reason
+                    })
+                } else {
+                    unreachable!()
+                }
+            } else {
+                unreachable!() // TODO: use something cleaner like a match for this
+            }
         };
         Checked { src, value }
     }
@@ -362,7 +374,19 @@ impl CstParser {
         } else if let Label { value: Ok(_), .. } = label {
             Ok(UnsignedImmOrLabel::Label(label))
         } else {
-            Err(ParseError::Misc("Invalid as label and as unsigned immediate.".to_string()))
+            if let Label { value: Err(ParseError::InvalidLabel { reasons: invalid_label_reasons, .. }), .. } = label {
+                if let Immediate { value: Err(ParseError::InvalidImmediate { reason: invalid_immediate_reason, .. }), .. } = imm {
+                    Err(ParseError::InvalidLabelOrImmediate {
+                        range: src.span,
+                        invalid_label_reasons,
+                        invalid_immediate_reason
+                    })
+                } else {
+                    unreachable!()
+                }
+            } else {
+                unreachable!() // TODO: use something cleaner like a match for this
+            }
         };
         Checked { src, value }
     }
