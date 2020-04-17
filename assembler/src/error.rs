@@ -8,6 +8,7 @@ use crate::cst;
 use crate::cst::{Object, ObjectContent, Operation, Operands};
 use lc3_isa::SignedWord;
 use crate::ir2_lines::LineContent::Invalid;
+use annotate_snippets::display_list::FormatOptions;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LexError {
@@ -104,8 +105,8 @@ impl Display for InvalidLabelReason {
     }
 }
 
-impl<'input> ParseError {
-    fn message(&self) -> String {
+impl ParseError {
+    pub fn message(&self) -> String {
         match self {
             InvalidLabel { reasons, .. } => {
                 format!("invalid label, reasons -- {}", reasons.iter().map(InvalidLabelReason::to_string).join(", "))
@@ -133,7 +134,7 @@ impl<'input> ParseError {
         }
     }
     
-    fn annotations(&self) -> Vec<SourceAnnotation> {
+    pub fn annotations(&self) -> Vec<SourceAnnotation> {
         let mut annotations = Vec::new();
         
         macro_rules! push_annotation {
@@ -141,7 +142,7 @@ impl<'input> ParseError {
                 annotations.push(
                     SourceAnnotation {
                         range: $range.clone(),
-                        label: $label.to_string(),
+                        label: $label,
                         annotation_type: AnnotationType::Error,
                     }
                 );
@@ -164,36 +165,7 @@ impl<'input> ParseError {
         annotations
     }
     
-    fn slices(&self, source: String, origin: Option<String>) -> Vec<Slice> {
-        let mut slices = Vec::new();
-        match self {
-            Misc(_) => {},
-            _ => {
-                slices.push(
-                    Slice {
-                        source,
-                        origin,
-                        line_start: 1,
-                        fold: true,
-                        annotations: self.annotations(),
-                    }
-                );
-            },
-        }
-        slices
-    }
 
-    pub fn create_snippet(&self, source: String, origin: Option<String>) -> Snippet {
-        Snippet {
-            title: Some(Annotation {
-                label: Some(self.message()),
-                id: None,
-                annotation_type: AnnotationType::Error
-            }),
-            footer: vec![],
-            slices: self.slices(source, origin),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

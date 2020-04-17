@@ -8,9 +8,9 @@ use lc3_assembler::assembler::assemble;
 use lc3_shims::memory::FileBackedMemoryShim;
 use clap::clap_app;
 use lc3_assembler::parser::LeniencyLevel::*;
-use lc3_assembler::error::extract_file_errors;
-use annotate_snippets::formatter::DisplayListFormatter;
-use annotate_snippets::display_list::DisplayList;
+use lc3_assembler::error::{extract_file_errors, ParseError};
+use annotate_snippets::display_list::{DisplayList, FormatOptions};
+use annotate_snippets::snippet::{Snippet, Annotation, Slice, AnnotationType, SourceAnnotation};
 
 const MEM_DUMP_FILE_EXTENSION: &'static str = "mem";
 
@@ -40,16 +40,20 @@ fn as_() {
         let leniency = if matches.is_present("strict") { Strict } else { Lenient };
 
         let string = fs::read_to_string(path).unwrap();
-        let lexer = Lexer::new(string.as_str());
+        let src = string.as_str();
+        let lexer = Lexer::new(src);
         let cst = parse(lexer, leniency);
 
-        let dlf = DisplayListFormatter::new(true, false);
         let errors = extract_file_errors(cst.clone());
         if errors.len() > 0 {
             for error in errors {
-                let snippet = error.create_snippet(string.clone(), Some(path_str.to_string()));
+                let label_string = error.message();
+                let label = label_string.as_str();
+                let annotations = error.annotations();
+                let slices = slices(annotations, src, Some(path_str));
+                let snippet = create_snippet(label, slices);
                 let dl = DisplayList::from(snippet);
-                println!("{}", dlf.format(&dl));
+                println!("{}", dl);
             }
             break;
         }
@@ -66,4 +70,33 @@ fn as_() {
             file_backed_mem.flush_all_changes().unwrap();
         }
     }
+}
+
+fn create_snippet<'input>(label: &'input str, slices: Vec<Slice<'input>>) -> Snippet<'input> {
+    Snippet {
+        title: Some(Annotation {
+            label: Some(label),
+            id: None,
+            annotation_type: AnnotationType::Error
+        }),
+        footer: vec![],
+        slices,
+        opt: FormatOptions { color: true, anonymized_line_numbers: false }
+    }
+}
+
+pub fn slices<'input>(annotations: Vec<SourceAnnotation<'input>>, source: &'input str, origin: Option<&'input str>) -> Vec<Slice<'input>> {
+    let mut slices = Vec::new();
+    if !annotations.is_empty() {
+        slices.push(
+            Slice {
+                source,
+                origin,
+                line_start: 1,
+                fold: true,
+                annotations,
+            }
+        );
+    }
+    slices
 }

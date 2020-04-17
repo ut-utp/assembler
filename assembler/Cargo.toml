@@ -36,7 +36,7 @@ maintenance = { status = "actively-developed" }
 regex = "0.2.1"
 itertools = "0.8.2"
 num-traits = "0.2.11"
-annotate-snippets = "0.6.1"
+annotate-snippets = "0.8.0"
 clap = "2.33.0"
 
 lc3-isa = { git = "https://github.com/ut-utp/prototype", branch = "master", version = "0.1.0", default-features = false }
