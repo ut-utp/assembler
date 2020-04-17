@@ -6,6 +6,7 @@ use ParseError::*;
 use itertools::Itertools;
 use crate::cst;
 use crate::cst::{Object, ObjectContent, Operation, Operands};
+use lc3_isa::SignedWord;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LexError {
@@ -33,6 +34,11 @@ pub enum ParseError {
     InvalidLine {
         range: Option<Span>,
     },
+    InvalidRegOrImm5 {
+        range: Span,
+        invalid_reg_reason: InvalidRegReason,
+        invalid_imm5_reason: InvalidImmediateReason,
+    },
     Misc(String),
 }
 
@@ -58,6 +64,7 @@ pub enum InvalidImmediateReason {
     RadixChar { actual: String },
     NoNumber,
     Number { actual: String },
+    OutOfRange { value: SignedWord, num_bits: u32 },
 }
 
 impl Display for InvalidImmediateReason {
@@ -68,6 +75,7 @@ impl Display for InvalidImmediateReason {
             NoNumber => { write!(f, "didn't follow radix sign with number") }
             RadixChar { actual } => { write!(f, "didn't use valid radix sign (was: {})", actual) }
             Number { actual } => { write!(f, "couldn't parse number (was: {})", actual) }
+            OutOfRange { value, num_bits } => { write!(f, "value {} can't be represented in {} bits", value, num_bits)}
         }
     }
 }
@@ -103,6 +111,12 @@ impl<'input> ParseError {
             HangingLabel { .. } => { format!("hanging label") }
             InvalidLine  { .. } => { format!("invalid line")  }
             InvalidImmediate { reason, .. } => { format!("invalid immediate, {}", reason) }
+            InvalidRegOrImm5 { invalid_reg_reason, invalid_imm5_reason, .. } => {
+                format!("invalid register or 5-bit immediate,\n\
+                         invalid as register because: {}\n\
+                         invalid as immediate because: {}",
+                        invalid_reg_reason, invalid_imm5_reason)
+            }
         }
     }
     
@@ -130,6 +144,7 @@ impl<'input> ParseError {
                 }
             }
             InvalidImmediate { range, .. } => { push_annotation!(range, "invalid immediate here"); }
+            InvalidRegOrImm5 { range, .. } => { push_annotation!(range, "invalid register or immediate here"); }
             Misc(_) => {},
         }
         annotations

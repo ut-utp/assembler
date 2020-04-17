@@ -149,7 +149,7 @@ dependencies = [
 [[package]]
 name = "lc3-baseline-sim"
 version = "0.1.0"
-source = "git+https://github.com/ut-utp/prototype#5953f604cbc2bf33e88220eedd08e33fd95a1282"
+source = "git+https://github.com/ut-utp/prototype#2d8ffe333a2d272ab83ef16876d3f8f02c7b44a9"
 dependencies = [
  "lc3-isa",
  "lc3-macros",
@@ -180,7 +180,7 @@ dependencies = [
 [[package]]
 name = "lc3-os"
 version = "0.1.0"
-source = "git+https://github.com/ut-utp/prototype#5953f604cbc2bf33e88220eedd08e33fd95a1282"
+source = "git+https://github.com/ut-utp/prototype#2d8ffe333a2d272ab83ef16876d3f8f02c7b44a9"
 dependencies = [
  "lazy_static",
  "lc3-baseline-sim",

@@ -251,7 +251,19 @@ impl CstParser {
         } else if let Immediate { value: Ok(_), .. } = imm5 {
             Ok(Sr2OrImm5::Imm5(imm5))
         } else {
-            Err(ParseError::Misc("Invalid as register and as 5-bit immediate.".to_string()))
+            if let Reg { value: Err(ParseError::InvalidReg { reason: invalid_reg_reason, .. }), .. } = reg {
+                if let Immediate { value: Err(ParseError::InvalidImmediate { reason: invalid_imm5_reason, .. }), .. } = imm5 {
+                    Err(ParseError::InvalidRegOrImm5 {
+                        range: src.span,
+                        invalid_reg_reason,
+                        invalid_imm5_reason,
+                    })
+                } else {
+                    unreachable!()
+                }
+            } else {
+                unreachable!() // TODO: use something cleaner like a match for this
+            }
         };
         Checked { src, value }
     }
@@ -313,9 +325,19 @@ impl CstParser {
 
     fn validate_signed_immediate<'input>(&self, src: Token<'input>, num_bits: u32) -> Immediate<'input, SignedWord> {
         let Immediate { src, value } = self.validate_numeric_immediate(src);
-        let value = value.ok()
-            .filter(|&i| check_signed_imm(i, num_bits))
-            .ok_or(ParseError::Misc("Invalid signed word immediate".to_string()));
+        let value = match value {
+            Ok(i) => {
+                if check_signed_imm(i, num_bits) {
+                    Ok(i)
+                } else {
+                    Err(ParseError::InvalidImmediate {
+                        range: src.span,
+                        reason: InvalidImmediateReason::OutOfRange { value: i, num_bits }
+                    })
+                }
+            }
+            error => error // TODO: look for appropriate combinator(s)?
+        };
         Immediate { src, value }
     }
 
