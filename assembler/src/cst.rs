@@ -456,6 +456,11 @@ impl CstParser {
                     _ => { return Err(ParseError::Misc("Invalid condition codes.".to_string())) },
                 }
             }
+            if !(n || z || p) {
+                n = true;
+                z = true;
+                p = true;
+            }
             Ok(Some(ConditionCodes { n, z, p }))
         } else {
             Ok(None)
