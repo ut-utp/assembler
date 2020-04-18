@@ -149,7 +149,7 @@ dependencies = [
 [[package]]
 name = "lc3-baseline-sim"
 version = "0.1.0"
-source = "git+https://github.com/ut-utp/prototype?branch=feat-trap-tests#d43d1481f98ad51099e9f53f5e77527357036892"
+source = "git+https://github.com/ut-utp/prototype?branch=staging#e58a261e7a0314e87a9a9ce10f890a1dd983223e"
 dependencies = [
  "lc3-isa",
  "lc3-macros",
@@ -160,7 +160,7 @@ dependencies = [
 [[package]]
 name = "lc3-isa"
 version = "0.1.0"
-source = "git+https://github.com/ut-utp/prototype?branch=feat-trap-tests#d43d1481f98ad51099e9f53f5e77527357036892"
+source = "git+https://github.com/ut-utp/prototype?branch=staging#e58a261e7a0314e87a9a9ce10f890a1dd983223e"
 dependencies = [
  "lc3-macros",
  "serde",
@@ -170,7 +170,7 @@ dependencies = [
 [[package]]
 name = "lc3-macros"
 version = "0.1.0"
-source = "git+https://github.com/ut-utp/prototype?branch=feat-trap-tests#d43d1481f98ad51099e9f53f5e77527357036892"
+source = "git+https://github.com/ut-utp/prototype?branch=staging#e58a261e7a0314e87a9a9ce10f890a1dd983223e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -180,7 +180,7 @@ dependencies = [
 [[package]]
 name = "lc3-os"
 version = "0.1.0"
-source = "git+https://github.com/ut-utp/prototype?branch=feat-trap-tests#d43d1481f98ad51099e9f53f5e77527357036892"
+source = "git+https://github.com/ut-utp/prototype?branch=staging#e58a261e7a0314e87a9a9ce10f890a1dd983223e"
 dependencies = [
  "lazy_static",
  "lc3-baseline-sim",
@@ -194,7 +194,7 @@ dependencies = [
 [[package]]
 name = "lc3-shims"
 version = "0.1.0"
-source = "git+https://github.com/ut-utp/prototype?branch=feat-trap-tests#d43d1481f98ad51099e9f53f5e77527357036892"
+source = "git+https://github.com/ut-utp/prototype?branch=staging#e58a261e7a0314e87a9a9ce10f890a1dd983223e"
 dependencies = [
  "byteorder",
  "chrono",
@@ -209,7 +209,7 @@ dependencies = [
 [[package]]
 name = "lc3-traits"
 version = "0.1.0"
-source = "git+https://github.com/ut-utp/prototype?branch=feat-trap-tests#d43d1481f98ad51099e9f53f5e77527357036892"
+source = "git+https://github.com/ut-utp/prototype?branch=staging#e58a261e7a0314e87a9a9ce10f890a1dd983223e"
 dependencies = [
  "lc3-isa",
  "lc3-macros",
