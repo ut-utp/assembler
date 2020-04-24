@@ -1,17 +1,17 @@
 use std::iter::Peekable;
 use std::mem;
 use crate::lexer::Token;
-use crate::ir::ir2_check_line_syntax;
+use crate::ir::ir2_parse_line_syntax;
 
 // Shorthands
-pub type IR2Line<'input> = ir2_check_line_syntax::Line<'input>;
-pub type IR2Lines<'input> = ir2_check_line_syntax::Lines<'input>;
-pub type IR2LineContent<'input> = ir2_check_line_syntax::LineContent<'input>;
+pub type IR2Line<'input> = ir2_parse_line_syntax::Line<'input>;
+pub type IR2Lines<'input> = ir2_parse_line_syntax::Lines<'input>;
+pub type IR2LineContent<'input> = ir2_parse_line_syntax::LineContent<'input>;
 
 // Types "part of" this IR
-pub type OperationTokens<'input> = ir2_check_line_syntax::OperationTokens<'input>;
-pub type OperandTokens<'input> = ir2_check_line_syntax::OperandTokens<'input>;
-pub type Label<'input> = ir2_check_line_syntax::Label<'input>;
+pub type OperationTokens<'input> = ir2_parse_line_syntax::OperationTokens<'input>;
+pub type OperandTokens<'input> = ir2_parse_line_syntax::OperandTokens<'input>;
+pub type Label<'input> = ir2_parse_line_syntax::Label<'input>;
 
 #[derive(Clone)]
 pub struct File<'input> {
@@ -44,7 +44,7 @@ pub struct Line<'input> {
     pub newlines: Vec<Token<'input>>,
 }
 
-pub fn parse_unvalidated_file(lines: IR2Lines) -> File {
+pub fn parse_objects(lines: IR2Lines) -> File {
     let mut objects = Vec::new();
     let mut ignored = Vec::new();
     let mut lines = lines.into_iter().peekable();

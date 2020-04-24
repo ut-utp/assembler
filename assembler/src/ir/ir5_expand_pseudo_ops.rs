@@ -1,6 +1,6 @@
-use crate::ir::ir4_validate_ambiguous_tokens;
+use crate::ir::ir4_parse_ambiguous_tokens;
 use lc3_isa::{Word, Addr};
-use crate::ir::ir4_validate_ambiguous_tokens::Checked;
+use crate::ir::ir4_parse_ambiguous_tokens::Checked;
 use std::iter::repeat;
 
 pub type Label<'input> = &'input str;
@@ -12,12 +12,12 @@ pub struct Object<'input> {
 
 #[derive(Clone)]
 pub enum OpOrValue<'input> {
-    Operation(ir4_validate_ambiguous_tokens::Operation<'input>),
+    Operation(ir4_parse_ambiguous_tokens::Operation<'input>),
     Value(Word),
 }
 
-pub fn expand_pseudo_ops(object: ir4_validate_ambiguous_tokens::Object) -> Object {
-    let ir4_validate_ambiguous_tokens::Object { origin, content, .. } = object;
+pub fn expand_pseudo_ops(object: ir4_parse_ambiguous_tokens::Object) -> Object {
+    let ir4_parse_ambiguous_tokens::Object { origin, content, .. } = object;
 
     let orig = origin.unwrap();
 
@@ -25,7 +25,7 @@ pub fn expand_pseudo_ops(object: ir4_validate_ambiguous_tokens::Object) -> Objec
     for operation in content.operations {
         let label = operation.label.clone().map(Checked::unwrap);
         let mut values = Vec::new();
-        use ir4_validate_ambiguous_tokens::Operands;
+        use ir4_parse_ambiguous_tokens::Operands;
         match operation.operands {
             Operands::Blkw { size, .. } => {
                 let num_values = size.unwrap() as usize;

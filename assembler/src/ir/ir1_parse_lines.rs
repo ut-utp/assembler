@@ -12,7 +12,7 @@ pub struct Line<'input> {
     pub newline: Option<Token<'input>>,
 }
 
-pub fn parse_simple_lines(lexer: Lexer) -> Lines {
+pub fn parse_lines(lexer: Lexer) -> Lines {
     let mut tokens = lexer.peekable();
     let mut simple_lines = Vec::new();
     while tokens.peek().is_some() {
@@ -63,7 +63,7 @@ mod tests {
     #[test]
     fn no_newline() {
         let lexer = Lexer::new("ADD");
-        let simple_lines = parse_simple_lines(lexer);
+        let simple_lines = parse_lines(lexer);
         let Line { src, content, comment, newline } = simple_lines.get(0).unwrap();
         assert_eq!(*src, "ADD".to_string());
         assert_eq!(content.len(), 1);
@@ -74,7 +74,7 @@ mod tests {
     #[test]
     fn two_lines() {
         let lexer = Lexer::new("ADD ; test\n.END");
-        let simple_lines = parse_simple_lines(lexer);
+        let simple_lines = parse_lines(lexer);
         let Line { src, content, comment, newline } = simple_lines.get(0).unwrap();
         assert_eq!(*src, "ADD ; test\n".to_string());
         assert_eq!(content.len(), 2);

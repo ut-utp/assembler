@@ -5,14 +5,14 @@ use lc3_isa::{Addr, SignedWord, check_signed_imm, Word};
 
 use crate::error::{ParseError, InvalidLabelReason, InvalidRegReason, InvalidImmediateReason};
 use crate::lexer::Token;
-use crate::ir::ir2_check_line_syntax;
-use crate::ir::ir3_group_lines_and_objects;
+use crate::ir::ir2_parse_line_syntax;
+use crate::ir::ir3_parse_objects;
 use crate::parser::LeniencyLevel;
 
 #[derive(Clone, Debug)]
 pub struct File<'input> {
     pub objects: Vec<Object<'input>>,
-    pub ignored: Vec<ir2_check_line_syntax::Line<'input>>,
+    pub ignored: Vec<ir2_parse_line_syntax::Line<'input>>,
 }
 
 #[derive(Clone, Debug)]
@@ -25,9 +25,9 @@ pub struct Object<'input> {
 #[derive(Clone, Debug)]
 pub struct ObjectContent<'input> {
     pub operations: Vec<Operation<'input>>,
-    pub empty_lines: Vec<ir2_check_line_syntax::Line<'input>>,
-    pub hanging_labels: Vec<ir2_check_line_syntax::Line<'input>>,
-    pub invalid_lines: Vec<ir2_check_line_syntax::Line<'input>>,
+    pub empty_lines: Vec<ir2_parse_line_syntax::Line<'input>>,
+    pub hanging_labels: Vec<ir2_parse_line_syntax::Line<'input>>,
+    pub invalid_lines: Vec<ir2_parse_line_syntax::Line<'input>>,
 }
 
 pub type Label<'input> = Checked<'input, &'input str>;
@@ -131,23 +131,23 @@ pub enum Operands<'input> {
     End,
 }
 
-pub struct CstParser {
+pub struct AmbiguousTokenParser {
     pub leniency: LeniencyLevel,
 }
 
-impl CstParser {
+impl AmbiguousTokenParser {
 
-    pub fn parse_cst<'input>(&self, file: ir3_group_lines_and_objects::File<'input>) -> File<'input> {
-        let ir3_group_lines_and_objects::File { objects, ignored } = file;
+    pub fn parse_ambiguous_tokens<'input>(&self, file: ir3_parse_objects::File<'input>) -> File<'input> {
+        let ir3_parse_objects::File { objects, ignored } = file;
         File {
             objects: objects.into_iter().map(|o| self.validate_object(o)).collect(),
             ignored
         }
     }
 
-    fn validate_object<'input>(&self, object: ir3_group_lines_and_objects::Object<'input>) -> Object<'input> {
-        let ir3_group_lines_and_objects::Object { origin_src, origin, content } = object;
-        let ir3_group_lines_and_objects::ObjectContent { operations, empty_lines, hanging_labels, invalid_lines } = content;
+    fn validate_object<'input>(&self, object: ir3_parse_objects::Object<'input>) -> Object<'input> {
+        let ir3_parse_objects::Object { origin_src, origin, content } = object;
+        let ir3_parse_objects::ObjectContent { operations, empty_lines, hanging_labels, invalid_lines } = content;
         Object {
             origin_src: self.validate_line(origin_src),
             origin: self.validate_numeric_immediate(origin),
@@ -160,10 +160,10 @@ impl CstParser {
         }
     }
 
-    fn validate_line<'input>(&self, line: ir3_group_lines_and_objects::Line<'input>) -> Operation<'input> {
-        let ir3_group_lines_and_objects::Line {
+    fn validate_line<'input>(&self, line: ir3_parse_objects::Line<'input>) -> Operation<'input> {
+        let ir3_parse_objects::Line {
             label,
-            operation: ir2_check_line_syntax::OperationTokens {
+            operation: ir2_parse_line_syntax::OperationTokens {
                 operator,
                 operands,
                 separators,
@@ -187,8 +187,8 @@ impl CstParser {
         }
     }
 
-    fn validate_operand_tokens<'input>(&self, operands: ir2_check_line_syntax::OperandTokens<'input>) -> Operands<'input> {
-        use ir2_check_line_syntax::OperandTokens;
+    fn validate_operand_tokens<'input>(&self, operands: ir2_parse_line_syntax::OperandTokens<'input>) -> Operands<'input> {
+        use ir2_parse_line_syntax::OperandTokens;
         match operands {
             OperandTokens::Add { dr, sr1, sr2_or_imm5 } =>
                 Operands::Add {
@@ -497,7 +497,7 @@ mod immediate_tests {
     use pretty_assertions::assert_eq;
 
     fn single_test<N: core::fmt::Debug + Num>(num: &str, actual: N)  {
-        let p = CstParser { leniency: LeniencyLevel::Lenient };
+        let p = AmbiguousTokenParser { leniency: LeniencyLevel::Lenient };
 
         let tok = Token { src: num, span: (0, 0), ty: crate::lexer::TokenType::Ambiguous };
 

@@ -1,10 +1,10 @@
-use crate::ir::{ir4_validate_ambiguous_tokens, ir5_expand_pseudo_ops};
+use crate::ir::{ir4_parse_ambiguous_tokens, ir5_expand_pseudo_ops};
 use lc3_isa::{ADDR_SPACE_SIZE_IN_WORDS, Addr, Instruction, Word, SignedWord};
 
 use lc3_isa::util::MemoryDump;
 use crate::analysis::symbol_table::{SymbolTable, build_symbol_table};
 use std::collections::HashMap;
-use crate::ir::ir4_validate_ambiguous_tokens::{UnsignedImmOrLabel, Operands, ImmOrLabel};
+use crate::ir::ir4_parse_ambiguous_tokens::{UnsignedImmOrLabel, Operands, ImmOrLabel};
 use crate::ir::ir5_expand_pseudo_ops::expand_pseudo_ops;
 use crate::analysis::memory_placement::validate_placement;
 
@@ -22,7 +22,7 @@ impl<'input> QueryableObject<'input> {
 }
 
 pub fn assemble<'input, O>(objects: O, background: Option<MemoryDump>) -> MemoryDump
-    where O: IntoIterator<Item=ir4_validate_ambiguous_tokens::Object<'input>>
+    where O: IntoIterator<Item=ir4_parse_ambiguous_tokens::Object<'input>>
 {
     let complete_objects = assemble_to_queryable_objects(objects);
     assemble_queryable_objects(complete_objects, background)
@@ -30,7 +30,7 @@ pub fn assemble<'input, O>(objects: O, background: Option<MemoryDump>) -> Memory
 
 
 pub fn assemble_to_queryable_objects<'input, O>(objects: O) -> QueryableObject<'input>
-    where O: IntoIterator<Item=ir4_validate_ambiguous_tokens::Object<'input>>
+    where O: IntoIterator<Item=ir4_parse_ambiguous_tokens::Object<'input>>
 {
     let expanded_objects = objects.into_iter().map(expand_pseudo_ops).collect();
     validate_placement(&expanded_objects).unwrap();
@@ -106,7 +106,7 @@ pub fn construct_instructions<'input>(object: ir5_expand_pseudo_ops::Object, sym
     for op_or_value in object.ops_or_values {
         use ir5_expand_pseudo_ops::OpOrValue;
         let (insn_or_value, src_lines) = match op_or_value.1 {
-            OpOrValue::Operation(ir4_validate_ambiguous_tokens::Operation { operands: Operands::Fill { value }, src_lines, .. }) => {
+            OpOrValue::Operation(ir4_parse_ambiguous_tokens::Operation { operands: Operands::Fill { value }, src_lines, .. }) => {
                 let value = match value.unwrap() {
                     UnsignedImmOrLabel::Imm(immediate) => immediate.unwrap(),
                     UnsignedImmOrLabel::Label(label) => {
@@ -121,12 +121,12 @@ pub fn construct_instructions<'input>(object: ir5_expand_pseudo_ops::Object, sym
                 let src_lines = instruction_cst.src_lines;
                 let insn = match instruction_cst.operands {
                     Operands::Add { dr, sr1, sr2_or_imm5 } => match sr2_or_imm5.unwrap() {
-                        ir4_validate_ambiguous_tokens::Sr2OrImm5::Imm5(immediate) => Instruction::new_add_imm(dr.unwrap(), sr1.unwrap(), immediate.unwrap()),
-                        ir4_validate_ambiguous_tokens::Sr2OrImm5::Sr2(src_reg)    => Instruction::new_add_reg(dr.unwrap(), sr1.unwrap(), src_reg.unwrap()),
+                        ir4_parse_ambiguous_tokens::Sr2OrImm5::Imm5(immediate) => Instruction::new_add_imm(dr.unwrap(), sr1.unwrap(), immediate.unwrap()),
+                        ir4_parse_ambiguous_tokens::Sr2OrImm5::Sr2(src_reg)    => Instruction::new_add_reg(dr.unwrap(), sr1.unwrap(), src_reg.unwrap()),
                     },
                     Operands::And { dr, sr1, sr2_or_imm5, } => match sr2_or_imm5.unwrap() {
-                        ir4_validate_ambiguous_tokens::Sr2OrImm5::Imm5(immediate) => Instruction::new_and_imm(dr.unwrap(), sr1.unwrap(), immediate.unwrap()),
-                        ir4_validate_ambiguous_tokens::Sr2OrImm5::Sr2(src_reg)    => Instruction::new_and_reg(dr.unwrap(), sr1.unwrap(), src_reg.unwrap()),
+                        ir4_parse_ambiguous_tokens::Sr2OrImm5::Imm5(immediate) => Instruction::new_and_imm(dr.unwrap(), sr1.unwrap(), immediate.unwrap()),
+                        ir4_parse_ambiguous_tokens::Sr2OrImm5::Sr2(src_reg)    => Instruction::new_and_reg(dr.unwrap(), sr1.unwrap(), src_reg.unwrap()),
                     },
 
                     Operands::Ld { dr, pc_offset9 } => Instruction::new_ld(dr.unwrap(), compute_offset(pc_offset9, current_location, &symbol_table)),
@@ -176,7 +176,7 @@ pub fn construct_instructions<'input>(object: ir5_expand_pseudo_ops::Object, sym
     CompleteObject { orig, insns_or_values, symbol_table }
 }
 
-fn compute_offset(pc_offset: ir4_validate_ambiguous_tokens::Checked<ImmOrLabel>, location: Addr, symbol_table: &HashMap<&str, Addr>) -> SignedWord {
+fn compute_offset(pc_offset: ir4_parse_ambiguous_tokens::Checked<ImmOrLabel>, location: Addr, symbol_table: &HashMap<&str, Addr>) -> SignedWord {
     match pc_offset.unwrap() {
         ImmOrLabel::Label(label) => {
             let label = label.unwrap();

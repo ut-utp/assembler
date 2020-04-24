@@ -195,7 +195,7 @@ impl<'input> OperandTokens<'input> {
     }
 }
 
-pub fn parse_lines(ir1_lines: ir1_parse_lines::Lines) -> Lines {
+pub fn parse_line_syntax(ir1_lines: ir1_parse_lines::Lines) -> Lines {
     ir1_lines.into_iter()
         .map(parse_line)
         .collect()
@@ -408,13 +408,13 @@ fn parse_separator<'input, T>(tokens: &mut Peekable<T>) -> Result<Vec<Token<'inp
 mod tests {
     use super::*;
     use crate::lexer::Lexer;
-    use crate::ir::ir1_parse_lines::parse_simple_lines;
+    use crate::ir::ir1_parse_lines::parse_lines;
 
     #[test]
     fn add() {
         let lexer = Lexer::new("ADD R0, R0, R0");
-        let simple_lines = parse_simple_lines(lexer);
-        let lines = parse_lines(simple_lines);
+        let simple_lines = parse_lines(lexer);
+        let lines = parse_line_syntax(simple_lines);
         let Line { content, .. } = lines.get(0).unwrap();
         let matches = if let LineContent::Valid(None, Some(operation_tokens)) = content {
             if let OperationTokens { operands: OperandTokens::Add { .. }, ..} = operation_tokens {
@@ -427,8 +427,8 @@ mod tests {
     #[test]
     fn labeled_add() {
         let lexer = Lexer::new("LABEL\n\tADD R0, R1, #1");
-        let simple_lines = parse_simple_lines(lexer);
-        let lines = parse_lines(simple_lines);
+        let simple_lines = parse_lines(lexer);
+        let lines = parse_line_syntax(simple_lines);
 
         let Line { content, .. } = lines.get(0).unwrap();
         let line_0_matches = if let LineContent::Valid(Some(_), None) = content { true } else { false };
