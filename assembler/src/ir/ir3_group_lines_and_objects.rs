@@ -1,7 +1,7 @@
-use crate::lexer::Token;
-use crate::ir2_lines::{OperationTokens, Label, Line, Lines, LineContent, OperandTokens};
 use std::iter::Peekable;
 use std::mem;
+use crate::lexer::Token;
+use crate::ir::ir2_check_line_syntax::{OperationTokens, Label, Line, Lines, LineContent, OperandTokens};
 
 #[derive(Clone)]
 pub struct UnvalidatedFile<'input> {

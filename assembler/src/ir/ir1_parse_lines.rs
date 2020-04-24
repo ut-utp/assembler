@@ -1,4 +1,5 @@
 use crate::lexer::{Token, Lexer, TokenType};
+use crate::util::reconstruct_src;
 use std::iter::Peekable;
 use itertools::Itertools;
 
@@ -52,15 +53,6 @@ fn parse_simple_line<'input>(tokens: &mut Peekable<Lexer<'input>>) -> SimpleLine
     let src = reconstruct_src(all_tokens);
 
     SimpleLine { src, content, comment, newline }
-}
-
-fn reconstruct_src<'input>(tokens: impl IntoIterator<Item=Token<'input>>) -> String {
-    let mut vec = tokens.into_iter().collect::<Vec<_>>();
-    vec.sort_by_key(|token| token.span.0);
-    vec.dedup();
-    vec.into_iter()
-        .map(|token| token.src)
-        .join("")
 }
 
 #[cfg(test)]

@@ -4,10 +4,10 @@ use annotate_snippets::snippet::{Snippet, Annotation, Slice, SourceAnnotation, A
 
 use ParseError::*;
 use itertools::Itertools;
-use crate::cst;
-use crate::cst::{Object, ObjectContent, Operation, Operands};
+use crate::ir::ir4_validate_ambiguous_tokens;
+use crate::ir::ir4_validate_ambiguous_tokens::{Object, ObjectContent, Operation, Operands};
 use lc3_isa::SignedWord;
-use crate::ir2_lines::LineContent::Invalid;
+use crate::ir::ir2_check_line_syntax::LineContent::Invalid;
 use annotate_snippets::display_list::FormatOptions;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -171,10 +171,10 @@ impl ParseError {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemoryError(pub String);
 
-pub fn extract_file_errors(cst: cst::File) -> Vec<ParseError> {
+pub fn extract_file_errors(cst: ir4_validate_ambiguous_tokens::File) -> Vec<ParseError> {
     let mut errors = Vec::new();
 
-    let cst::File { objects, .. } = cst;
+    let ir4_validate_ambiguous_tokens::File { objects, .. } = cst;
     if objects.len() == 0 {
         errors.push(ParseError::Misc("File contained no objects.".to_string()));
     }

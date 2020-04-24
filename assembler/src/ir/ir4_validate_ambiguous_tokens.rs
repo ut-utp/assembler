@@ -1,8 +1,8 @@
 use lc3_isa::{Addr, SignedWord, check_signed_imm, Word};
 use crate::error::{ParseError, InvalidLabelReason, InvalidRegReason, InvalidImmediateReason};
 use crate::lexer::Token;
-use crate::ir2_lines::{Line, OperationTokens, OperandTokens};
-use crate::ir3_unvalidated_objects::{UnvalidatedFile, UnvalidatedObject, UnvalidatedLine, UnvalidatedObjectContent};
+use crate::ir::ir2_check_line_syntax::{Line, OperationTokens, OperandTokens};
+use crate::ir::ir3_group_lines_and_objects::{UnvalidatedFile, UnvalidatedObject, UnvalidatedLine, UnvalidatedObjectContent};
 use std::convert::TryInto;
 use num_traits::Num;
 use std::string::ToString;

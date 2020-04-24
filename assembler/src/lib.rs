@@ -3,19 +3,13 @@
 // TODO: denys
 // TODO: docs URL
 
-pub mod error;
-
 pub mod lexer;
-
 pub mod parser;
-pub mod ir1_simple_lines;
-pub mod ir2_lines;
-pub mod ir3_unvalidated_objects;
-pub mod cst;
+pub mod ir;
+pub mod error;
 pub mod expanded;
-
+pub mod util;
 pub mod complete;
-
 pub mod assembler;
 
 

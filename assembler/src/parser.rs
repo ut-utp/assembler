@@ -1,8 +1,8 @@
-use crate::cst::{File, CstParser};
 use crate::lexer::Lexer;
-use crate::ir1_simple_lines::parse_simple_lines;
-use crate::ir2_lines::parse_lines;
-use crate::ir3_unvalidated_objects::parse_unvalidated_file;
+use crate::ir::ir1_parse_lines::parse_simple_lines;
+use crate::ir::ir2_check_line_syntax::parse_lines;
+use crate::ir::ir3_group_lines_and_objects::parse_unvalidated_file;
+use crate::ir::ir4_validate_ambiguous_tokens::{File, CstParser};
 
 pub fn parse(tokens: Lexer, leniency: LeniencyLevel) -> File {
     let ir1 = parse_simple_lines(tokens);

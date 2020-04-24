@@ -1,8 +1,8 @@
-use crate::lexer::{Token, TokenType, Opcode, Op, NamedTrap, PseudoOp, Span};
-use crate::ir1_simple_lines::{SimpleLines, SimpleLine};
 use std::iter::Peekable;
-use crate::error::ParseError;
 use itertools::Itertools;
+use crate::lexer::{Token, TokenType, Opcode, Op, NamedTrap, PseudoOp, Span};
+use crate::ir::ir1_parse_lines::{SimpleLines, SimpleLine};
+use crate::error::ParseError;
 
 pub type Lines<'input> = Vec<Line<'input>>;
 
@@ -408,7 +408,7 @@ fn parse_separator<'input, T>(tokens: &mut Peekable<T>) -> Result<Vec<Token<'inp
 mod tests {
     use super::*;
     use crate::lexer::Lexer;
-    use crate::ir1_simple_lines::parse_simple_lines;
+    use crate::ir::ir1_parse_lines::parse_simple_lines;
 
     #[test]
     fn add() {

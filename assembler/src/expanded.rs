@@ -1,6 +1,6 @@
 // For expanded pseudo-op structures
-use crate::cst;
-use crate::cst::{Operands, ImmOrLabel, UnsignedImmOrLabel, Checked};
+use crate::ir::ir4_validate_ambiguous_tokens;
+use crate::ir::ir4_validate_ambiguous_tokens::{Operands, ImmOrLabel, UnsignedImmOrLabel, Checked};
 use crate::error::MemoryError;
 use lc3_isa;
 use lc3_isa::{Word, SignedWord};
@@ -10,7 +10,7 @@ use std::iter::repeat;
 use itertools::Itertools;
 
 pub type SymbolTable<'input> = HashMap<&'input str, Addr>;
-pub type File<'input> = Vec<cst::Object<'input>>;
+pub type File<'input> = Vec<ir4_validate_ambiguous_tokens::Object<'input>>;
 
 pub struct Object<'input> {
     orig: Addr,
@@ -19,7 +19,7 @@ pub struct Object<'input> {
 
 #[derive(Clone)]
 pub enum OpOrValue<'input> {
-    Operation(cst::Operation<'input>),
+    Operation(ir4_validate_ambiguous_tokens::Operation<'input>),
     Value(Word),
 }
 
@@ -60,8 +60,8 @@ pub enum InsnOrValue {
 
 pub type Label<'input> = &'input str;
 
-pub fn expand_pseudo_ops(object: cst::Object) -> Object {
-    let cst::Object { origin, content, .. } = object;
+pub fn expand_pseudo_ops(object: ir4_validate_ambiguous_tokens::Object) -> Object {
+    let ir4_validate_ambiguous_tokens::Object { origin, content, .. } = object;
     
     let orig = origin.unwrap();
 
@@ -133,7 +133,7 @@ pub fn construct_instructions<'input>(object: Object, symbol_table: HashMap<&'in
     let mut insns_or_values = Vec::new();
     for op_or_value in object.ops_or_values {
         let (insn_or_value, src_lines) = match op_or_value.1 {
-            OpOrValue::Operation(cst::Operation { operands: Operands::Fill { value }, src_lines, .. }) => {
+            OpOrValue::Operation(ir4_validate_ambiguous_tokens::Operation { operands: Operands::Fill { value }, src_lines, .. }) => {
                 let value = match value.unwrap() {
                     UnsignedImmOrLabel::Imm(immediate) => immediate.unwrap(),
                     UnsignedImmOrLabel::Label(label) => {
@@ -148,12 +148,12 @@ pub fn construct_instructions<'input>(object: Object, symbol_table: HashMap<&'in
                 let src_lines = instruction_cst.src_lines;
                 let insn = match instruction_cst.operands {
                     Operands::Add { dr, sr1, sr2_or_imm5 } => match sr2_or_imm5.unwrap() {
-                        cst::Sr2OrImm5::Imm5(immediate) => Instruction::new_add_imm(dr.unwrap(), sr1.unwrap(), immediate.unwrap()),
-                        cst::Sr2OrImm5::Sr2(src_reg)    => Instruction::new_add_reg(dr.unwrap(), sr1.unwrap(), src_reg.unwrap()),
+                        ir4_validate_ambiguous_tokens::Sr2OrImm5::Imm5(immediate) => Instruction::new_add_imm(dr.unwrap(), sr1.unwrap(), immediate.unwrap()),
+                        ir4_validate_ambiguous_tokens::Sr2OrImm5::Sr2(src_reg)    => Instruction::new_add_reg(dr.unwrap(), sr1.unwrap(), src_reg.unwrap()),
                     },
                     Operands::And { dr, sr1, sr2_or_imm5, } => match sr2_or_imm5.unwrap() {
-                        cst::Sr2OrImm5::Imm5(immediate) => Instruction::new_and_imm(dr.unwrap(), sr1.unwrap(), immediate.unwrap()),
-                        cst::Sr2OrImm5::Sr2(src_reg)    => Instruction::new_and_reg(dr.unwrap(), sr1.unwrap(), src_reg.unwrap()),
+                        ir4_validate_ambiguous_tokens::Sr2OrImm5::Imm5(immediate) => Instruction::new_and_imm(dr.unwrap(), sr1.unwrap(), immediate.unwrap()),
+                        ir4_validate_ambiguous_tokens::Sr2OrImm5::Sr2(src_reg)    => Instruction::new_and_reg(dr.unwrap(), sr1.unwrap(), src_reg.unwrap()),
                     },
                     
                     Operands::Ld { dr, pc_offset9 } => Instruction::new_ld(dr.unwrap(), compute_offset(pc_offset9, current_location, &symbol_table)),
@@ -203,7 +203,7 @@ pub fn construct_instructions<'input>(object: Object, symbol_table: HashMap<&'in
     CompleteObject { orig, insns_or_values, symbol_table }
 }
 
-fn compute_offset(pc_offset: cst::Checked<ImmOrLabel>, location: Addr, symbol_table: &HashMap<&str, Addr>) -> SignedWord {
+fn compute_offset(pc_offset: ir4_validate_ambiguous_tokens::Checked<ImmOrLabel>, location: Addr, symbol_table: &HashMap<&str, Addr>) -> SignedWord {
     match pc_offset.unwrap() {
         ImmOrLabel::Label(label) => {
             let label = label.unwrap();

@@ -1,5 +1,5 @@
 use crate::expanded::{expand_pseudo_ops, build_symbol_table, validate_placement, construct_instructions, CompleteObject, InsnOrValue, InsnOrValueWithSrc};
-use crate::cst;
+use crate::ir::ir4_validate_ambiguous_tokens;
 use lc3_isa::{ADDR_SPACE_SIZE_IN_WORDS, Addr};
 
 use lc3_isa::util::MemoryDump;
@@ -18,7 +18,7 @@ impl<'input> QueryableObject<'input> {
 }
 
 pub fn assemble<'input, O>(objects: O, background: Option<MemoryDump>) -> MemoryDump
-    where O: IntoIterator<Item=cst::Object<'input>>
+    where O: IntoIterator<Item=ir4_validate_ambiguous_tokens::Object<'input>>
 {
     let complete_objects = assemble_to_queryable_objects(objects);
     assemble_queryable_objects(complete_objects, background)
@@ -26,7 +26,7 @@ pub fn assemble<'input, O>(objects: O, background: Option<MemoryDump>) -> Memory
 
 
 pub fn assemble_to_queryable_objects<'input, O>(objects: O) -> QueryableObject<'input>
-    where O: IntoIterator<Item=cst::Object<'input>>
+    where O: IntoIterator<Item=ir4_validate_ambiguous_tokens::Object<'input>>
 {
     let expanded_objects = objects.into_iter().map(expand_pseudo_ops).collect();
     validate_placement(&expanded_objects).unwrap();
