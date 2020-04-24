@@ -88,3 +88,8 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+
+# LC-3 Assembly
+*.asm
+*.mem
+*.obj
