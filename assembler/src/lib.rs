@@ -7,10 +7,10 @@ pub mod lexer;
 pub mod parser;
 pub mod ir;
 pub mod error;
-pub mod expanded;
 pub mod util;
 pub mod complete;
 pub mod assembler;
+pub mod analysis;
 
 
 #[cfg(test)]

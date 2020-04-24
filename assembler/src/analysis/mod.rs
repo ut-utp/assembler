@@ -7,3 +7,9 @@ pub mod memory_placement;
 /// Creates a structure to store the locations of labels.
 /// Used for later computing offsets from label operands.
 pub mod symbol_table;
+
+/// Extracts all errors from the parsed structs.
+pub mod extract_errors;
+
+/// Determines whether or not a parsed struct can be successfully assembled.
+pub mod validate;

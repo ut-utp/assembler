@@ -1,17 +1,18 @@
-use lc3_isa::{Addr, SignedWord, check_signed_imm, Word};
-use crate::error::{ParseError, InvalidLabelReason, InvalidRegReason, InvalidImmediateReason};
-use crate::lexer::Token;
-use crate::ir::ir2_check_line_syntax::{Line, OperationTokens, OperandTokens};
-use crate::ir::ir3_group_lines_and_objects;
 use std::convert::TryInto;
 use num_traits::Num;
 use std::string::ToString;
+use lc3_isa::{Addr, SignedWord, check_signed_imm, Word};
+
+use crate::error::{ParseError, InvalidLabelReason, InvalidRegReason, InvalidImmediateReason};
+use crate::lexer::Token;
+use crate::ir::ir2_check_line_syntax;
+use crate::ir::ir3_group_lines_and_objects;
 use crate::parser::LeniencyLevel;
 
 #[derive(Clone, Debug)]
 pub struct File<'input> {
     pub objects: Vec<Object<'input>>,
-    pub ignored: Vec<Line<'input>>,
+    pub ignored: Vec<ir2_check_line_syntax::Line<'input>>,
 }
 
 #[derive(Clone, Debug)]
@@ -24,9 +25,9 @@ pub struct Object<'input> {
 #[derive(Clone, Debug)]
 pub struct ObjectContent<'input> {
     pub operations: Vec<Operation<'input>>,
-    pub empty_lines: Vec<Line<'input>>,
-    pub hanging_labels: Vec<Line<'input>>,
-    pub invalid_lines: Vec<Line<'input>>,
+    pub empty_lines: Vec<ir2_check_line_syntax::Line<'input>>,
+    pub hanging_labels: Vec<ir2_check_line_syntax::Line<'input>>,
+    pub invalid_lines: Vec<ir2_check_line_syntax::Line<'input>>,
 }
 
 pub type Label<'input> = Checked<'input, &'input str>;
@@ -162,7 +163,7 @@ impl CstParser {
     fn validate_line<'input>(&self, line: ir3_group_lines_and_objects::Line<'input>) -> Operation<'input> {
         let ir3_group_lines_and_objects::Line {
             label,
-            operation: OperationTokens {
+            operation: ir2_check_line_syntax::OperationTokens {
                 operator,
                 operands,
                 separators,
@@ -186,7 +187,8 @@ impl CstParser {
         }
     }
 
-    fn validate_operand_tokens<'input>(&self, operands: OperandTokens<'input>) -> Operands<'input> {
+    fn validate_operand_tokens<'input>(&self, operands: ir2_check_line_syntax::OperandTokens<'input>) -> Operands<'input> {
+        use ir2_check_line_syntax::OperandTokens;
         match operands {
             OperandTokens::Add { dr, sr1, sr2_or_imm5 } =>
                 Operands::Add {
@@ -482,7 +484,7 @@ impl CstParser {
         // remove escape characters
         string = string
             .replace(r#"\""#, r#"""#)
-            .replace(r#"\\"#, r#"\"#)
+            .replace(r#"\\"#, r#"\"#) // TODO: fix this logic to escape \\ properly (atm \\n becomes '\n', not '\' and 'n')
             .replace(r#"\n"#, "\n");
         let value = Ok(string);
         Checked { src, value }
