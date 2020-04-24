@@ -2,7 +2,7 @@ use lc3_isa::{Addr, SignedWord, check_signed_imm, Word};
 use crate::error::{ParseError, InvalidLabelReason, InvalidRegReason, InvalidImmediateReason};
 use crate::lexer::Token;
 use crate::ir::ir2_check_line_syntax::{Line, OperationTokens, OperandTokens};
-use crate::ir::ir3_group_lines_and_objects::{UnvalidatedFile, UnvalidatedObject, UnvalidatedLine, UnvalidatedObjectContent};
+use crate::ir::ir3_group_lines_and_objects;
 use std::convert::TryInto;
 use num_traits::Num;
 use std::string::ToString;
@@ -136,17 +136,17 @@ pub struct CstParser {
 
 impl CstParser {
 
-    pub fn parse_cst<'input>(&self, file: UnvalidatedFile<'input>) -> File<'input> {
-        let UnvalidatedFile { objects, ignored } = file;
+    pub fn parse_cst<'input>(&self, file: ir3_group_lines_and_objects::File<'input>) -> File<'input> {
+        let ir3_group_lines_and_objects::File { objects, ignored } = file;
         File {
             objects: objects.into_iter().map(|o| self.validate_object(o)).collect(),
             ignored
         }
     }
 
-    fn validate_object<'input>(&self, object: UnvalidatedObject<'input>) -> Object<'input> {
-        let UnvalidatedObject { origin_src, origin, content } = object;
-        let UnvalidatedObjectContent { operations, empty_lines, hanging_labels, invalid_lines } = content;
+    fn validate_object<'input>(&self, object: ir3_group_lines_and_objects::Object<'input>) -> Object<'input> {
+        let ir3_group_lines_and_objects::Object { origin_src, origin, content } = object;
+        let ir3_group_lines_and_objects::ObjectContent { operations, empty_lines, hanging_labels, invalid_lines } = content;
         Object {
             origin_src: self.validate_line(origin_src),
             origin: self.validate_numeric_immediate(origin),
@@ -159,8 +159,8 @@ impl CstParser {
         }
     }
 
-    fn validate_line<'input>(&self, line: UnvalidatedLine<'input>) -> Operation<'input> {
-        let UnvalidatedLine {
+    fn validate_line<'input>(&self, line: ir3_group_lines_and_objects::Line<'input>) -> Operation<'input> {
+        let ir3_group_lines_and_objects::Line {
             label,
             operation: OperationTokens {
                 operator,

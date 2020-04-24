@@ -1,7 +1,7 @@
 use std::iter::Peekable;
 use itertools::Itertools;
 use crate::lexer::{Token, TokenType, Opcode, Op, NamedTrap, PseudoOp, Span};
-use crate::ir::ir1_parse_lines::{SimpleLines, SimpleLine};
+use crate::ir::ir1_parse_lines;
 use crate::error::ParseError;
 
 pub type Lines<'input> = Vec<Line<'input>>;
@@ -195,14 +195,14 @@ impl<'input> OperandTokens<'input> {
     }
 }
 
-pub fn parse_lines(simple_lines: SimpleLines) -> Lines {
-    simple_lines.into_iter()
+pub fn parse_lines(ir1_lines: ir1_parse_lines::Lines) -> Lines {
+    ir1_lines.into_iter()
         .map(parse_line)
         .collect()
 }
 
-fn parse_line(simple_line: SimpleLine) -> Line {
-    let SimpleLine { content: old_content, comment, newline, src, } = simple_line;
+fn parse_line(ir1_line: ir1_parse_lines::Line) -> Line {
+    let ir1_parse_lines::Line { content: old_content, comment, newline, src, } = ir1_line;
     let backup = old_content.clone();
 
     let mut tokens = old_content.into_iter().peekable();

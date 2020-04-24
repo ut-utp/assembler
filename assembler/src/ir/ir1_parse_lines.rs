@@ -3,16 +3,16 @@ use crate::util::reconstruct_src;
 use std::iter::Peekable;
 use itertools::Itertools;
 
-pub type SimpleLines<'input> = Vec<SimpleLine<'input>>;
+pub type Lines<'input> = Vec<Line<'input>>;
 
-pub struct SimpleLine<'input> {
+pub struct Line<'input> {
     pub src: String,
     pub content: Vec<Token<'input>>,
     pub comment: Option<Token<'input>>,
     pub newline: Option<Token<'input>>,
 }
 
-pub fn parse_simple_lines(lexer: Lexer) -> SimpleLines {
+pub fn parse_simple_lines(lexer: Lexer) -> Lines {
     let mut tokens = lexer.peekable();
     let mut simple_lines = Vec::new();
     while tokens.peek().is_some() {
@@ -22,7 +22,7 @@ pub fn parse_simple_lines(lexer: Lexer) -> SimpleLines {
     simple_lines
 }
 
-fn parse_simple_line<'input>(tokens: &mut Peekable<Lexer<'input>>) -> SimpleLine<'input> {
+fn parse_simple_line<'input>(tokens: &mut Peekable<Lexer<'input>>) -> Line<'input> {
     let content = tokens.peeking_take_while(|&Token { ty, .. }|
         ty != TokenType::Comment && ty != TokenType::Newline)
         .collect::<Vec<_>>();
@@ -52,7 +52,7 @@ fn parse_simple_line<'input>(tokens: &mut Peekable<Lexer<'input>>) -> SimpleLine
     }
     let src = reconstruct_src(all_tokens);
 
-    SimpleLine { src, content, comment, newline }
+    Line { src, content, comment, newline }
 }
 
 #[cfg(test)]
@@ -64,7 +64,7 @@ mod tests {
     fn no_newline() {
         let lexer = Lexer::new("ADD");
         let simple_lines = parse_simple_lines(lexer);
-        let SimpleLine { src, content, comment, newline } = simple_lines.get(0).unwrap();
+        let Line { src, content, comment, newline } = simple_lines.get(0).unwrap();
         assert_eq!(*src, "ADD".to_string());
         assert_eq!(content.len(), 1);
         assert!(comment.is_none());
@@ -75,13 +75,13 @@ mod tests {
     fn two_lines() {
         let lexer = Lexer::new("ADD ; test\n.END");
         let simple_lines = parse_simple_lines(lexer);
-        let SimpleLine { src, content, comment, newline } = simple_lines.get(0).unwrap();
+        let Line { src, content, comment, newline } = simple_lines.get(0).unwrap();
         assert_eq!(*src, "ADD ; test\n".to_string());
         assert_eq!(content.len(), 2);
         assert!(comment.is_some());
         assert!(newline.is_some());
 
-        let SimpleLine { src, content, comment, newline } = simple_lines.get(1).unwrap();
+        let Line { src, content, comment, newline } = simple_lines.get(1).unwrap();
         assert_eq!(*src, ".END".to_string());
         assert_eq!(content.len(), 1);
         assert!(comment.is_none());
