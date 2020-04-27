@@ -1,8 +1,9 @@
 use crate::expanded::{expand_pseudo_ops, build_symbol_table, validate_placement, construct_instructions, CompleteObject, InsnOrValue, InsnOrValueWithSrc};
 use crate::cst;
-use lc3_isa::{ADDR_SPACE_SIZE_IN_WORDS, Addr};
+use lc3_isa::{ADDR_SPACE_SIZE_IN_WORDS, Addr, Word};
 
 use lc3_isa::util::MemoryDump;
+use lc3_os::USER_PROG_START_ADDR;
 
 pub struct QueryableObject<'input> {
     segments: Vec<CompleteObject<'input>>
@@ -41,9 +42,15 @@ pub fn assemble_to_queryable_objects<'input, O>(objects: O) -> QueryableObject<'
 
 
 pub fn assemble_queryable_objects(queryable_object: QueryableObject, background: Option<MemoryDump>) -> MemoryDump {
+    let has_background = background.is_some();
     let mut memory = background.unwrap_or(MemoryDump([0x0000; ADDR_SPACE_SIZE_IN_WORDS]));
+    let mut orig_set = false;
     for complete_object in queryable_object.segments {
         let mut i = complete_object.orig as usize;
+        if has_background && !orig_set {
+            memory[USER_PROG_START_ADDR as usize] = i as Word;
+            orig_set = true;
+        }
         for insn_or_value_with_src in complete_object.insns_or_values {
             let InsnOrValueWithSrc { insn_or_value, .. } = insn_or_value_with_src;
             memory[i] = match insn_or_value {
