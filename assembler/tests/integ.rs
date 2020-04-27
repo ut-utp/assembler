@@ -2,7 +2,6 @@ extern crate lc3_assembler;
 
 use lc3_assembler::lexer::Lexer;
 use lc3_assembler::parser::parse;
-use lc3_assembler::assembler::assemble;
 use lc3_isa::Word;
 use lc3_assembler::parser::LeniencyLevel::Lenient;
 

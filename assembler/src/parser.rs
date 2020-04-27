@@ -4,12 +4,16 @@ use crate::ir::ir2_parse_line_syntax::parse_line_syntax;
 use crate::ir::ir3_parse_objects::parse_objects;
 use crate::ir::ir4_parse_ambiguous_tokens;
 use crate::ir::ir4_parse_ambiguous_tokens::AmbiguousTokenParser;
+use crate::complete;
+use crate::ir::ir5_expand_pseudo_ops::expand_pseudo_ops;
 
-pub fn parse(tokens: Lexer, leniency: LeniencyLevel) -> ir4_parse_ambiguous_tokens::File {
+pub fn parse(tokens: Lexer, leniency: LeniencyLevel) -> complete::Program {
     let ir1 = parse_lines(tokens);
     let ir2 = parse_line_syntax(ir1);
     let ir3 = parse_objects(ir2);
-    AmbiguousTokenParser { leniency }.parse_ambiguous_tokens(ir3)
+    let ir4 = AmbiguousTokenParser { leniency }.parse_ambiguous_tokens(ir3);
+    let ir5 = expand_pseudo_ops(ir4);
+
 }
 
 // TODO: impl Default?

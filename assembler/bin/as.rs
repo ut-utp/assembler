@@ -4,7 +4,6 @@ use std::{env, fs};
 use std::path::{Path, PathBuf};
 use lc3_assembler::lexer::Lexer;
 use lc3_assembler::parser::parse;
-use lc3_assembler::assembler::assemble;
 use lc3_shims::memory::FileBackedMemoryShim;
 use clap::clap_app;
 use lc3_assembler::parser::LeniencyLevel::*;

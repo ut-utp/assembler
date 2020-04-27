@@ -9,7 +9,6 @@ pub mod ir;
 pub mod error;
 pub mod util;
 pub mod complete;
-pub mod assembler;
 pub mod analysis;
 
 
