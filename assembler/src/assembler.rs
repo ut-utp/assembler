@@ -28,11 +28,10 @@ pub fn assemble<'input, O>(objects: O, background: Option<MemoryDump>) -> Memory
     assemble_queryable_objects(complete_objects, background)
 }
 
-
 pub fn assemble_to_queryable_objects<'input, O>(objects: O) -> QueryableObject<'input>
     where O: IntoIterator<Item=ir4_parse_ambiguous_tokens::Object<'input>>
 {
-    let expanded_objects = objects.into_iter().map(expand_pseudo_ops).collect();
+    let expanded_objects = expand_pseudo_ops(objects);
     validate_placement(&expanded_objects).unwrap();
     let segments = expanded_objects.into_iter()
         .map(|o| {
@@ -98,14 +97,12 @@ pub enum InsnOrValue {
 
 pub type Label<'input> = &'input str;
 
-
 pub fn construct_instructions<'input>(object: ir5_expand_pseudo_ops::Object, symbol_table: HashMap<&'input str, Addr>) -> CompleteObject<'input> {
-    let orig = object.orig;
-    let mut current_location = object.orig;
+    let orig = object.origin.unwrap();
+    let mut current_location = orig;
     let mut insns_or_values = Vec::new();
-    for op_or_value in object.ops_or_values {
-        use ir5_expand_pseudo_ops::OpOrValue;
-        let (insn_or_value, src_lines) = match op_or_value.1 {
+    for operation in object.content.operations {
+        let (insn_or_value, src_lines) = match operation.1 {
             OpOrValue::Operation(ir4_parse_ambiguous_tokens::Operation { operands: Operands::Fill { value }, src_lines, .. }) => {
                 let value = match value.unwrap() {
                     UnsignedImmOrLabel::Imm(immediate) => immediate.unwrap(),

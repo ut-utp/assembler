@@ -168,9 +168,6 @@ impl ParseError {
 
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct MemoryError(pub String);
-
 pub fn extract_file_errors(cst: ir4_parse_ambiguous_tokens::File) -> Vec<ParseError> {
     let mut errors = Vec::new();
 
