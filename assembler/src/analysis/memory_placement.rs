@@ -29,7 +29,7 @@ pub fn validate_placement(objects: &Vec<ir5_expand_pseudo_ops::Object>) -> Resul
     if !errors.is_empty() {
         return Err(errors);
     }
-    let start_end_pairs = starts_and_ends.iter()
+    let start_end_pairs = starts_and_ends.into_iter()
         .map(|start_and_end| start_and_end.unwrap())
         .sorted_by_key(|(start, end)| *start)
         .tuple_windows();
@@ -56,7 +56,7 @@ fn get_start_and_end(object: &ir5_expand_pseudo_ops::Object) -> Result<(Addr, Ad
         Ok(origin) => {
             let start = *origin;
             let mut end = start;
-            for operation in object.content.operations {
+            for operation in &object.content.operations {
                 match operation.num_memory_locations_occupied() {
                     Ok(num_locations) => {
                         end += num_locations as Addr;

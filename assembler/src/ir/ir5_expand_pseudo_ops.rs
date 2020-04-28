@@ -9,7 +9,10 @@ use crate::error::ParseError;
 pub type Label<'input> = ir4_parse_ambiguous_tokens::Label<'input>;
 pub type Immediate<'input, Addr> = Checked<'input, Addr>;
 
-pub type File<'input> = Vec<Object<'input>>;
+pub struct File<'input> {
+    pub objects: Vec<Object<'input>>,
+    pub ignored: Vec<ir2_parse_line_syntax::Line<'input>>,
+}
 
 pub struct Object<'input> {
     pub origin_src: Operation<'input>,
@@ -57,12 +60,12 @@ pub type Operands<'input> = ir4_parse_ambiguous_tokens::Operands<'input>;
 pub type ConditionCodes = ir4_parse_ambiguous_tokens::ConditionCodes;
 pub type Separator<'input> = ir4_parse_ambiguous_tokens::Separator<'input>;
 
-pub fn expand_pseudo_ops<'input, O>(objects: O) -> File<'input>
-    where O: IntoIterator<Item=ir4_parse_ambiguous_tokens::Object<'input>>
-{
-    objects.into_iter()
+pub fn expand_pseudo_ops(file: ir4_parse_ambiguous_tokens::File) -> File {
+    let ir4_parse_ambiguous_tokens::File { objects, ignored } = file;
+    let objects = objects.into_iter()
         .map(expand_object_pseudo_ops)
-        .collect()
+        .collect();
+    File { objects, ignored }
 }
 
 pub fn expand_object_pseudo_ops(object: ir4_parse_ambiguous_tokens::Object) -> Object {

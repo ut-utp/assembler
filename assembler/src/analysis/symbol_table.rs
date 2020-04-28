@@ -6,7 +6,7 @@ use crate::error::ParseError;
 
 pub type SymbolTable<'input> = HashMap<&'input str, Addr>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SymbolTableError {
     InvalidOrigin {
         parse_error: ParseError,
