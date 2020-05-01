@@ -18,6 +18,27 @@ pub enum LexError {
     Unknown,
 }
 
+impl LexError {
+
+    pub fn message(&self) -> String {
+        match self {
+            LexError::Unknown => "encountered unknown token when lexing",
+        }.to_string()
+    }
+
+    pub fn annotations(&self) -> Vec<SourceAnnotation> {
+        match self {
+            LexError::Unknown => vec![],
+        }
+    }
+
+    pub fn should_show(&self) -> bool {
+        match self {
+            LexError::Unknown => true,
+        }
+    }
+}
+
 
 #[derive(Debug, Clone)]
 pub enum ParseError {
@@ -59,6 +80,42 @@ pub enum Error {
     MemoryPlacement(MemoryPlacementError),
     SymbolTable(SymbolTableError),
     ConstructInstruction(ConstructInstructionError),
+}
+
+impl Error {
+    pub fn message(&self) -> String {
+        use Error::*;
+        match self {
+            Lex(error)                  => error.message(),
+            Parse(error)                => error.message(),
+            MemoryPlacement(error)      => error.message(),
+            SymbolTable(error)          => error.message(),
+            ConstructInstruction(error) => error.message(),
+        }
+    }
+
+    pub fn annotations(&self) -> Vec<SourceAnnotation> {
+        use Error::*;
+        match self {
+            Lex(error)                  => error.annotations(),
+            Parse(error)                => error.annotations(),
+            MemoryPlacement(error)      => error.annotations(),
+            SymbolTable(error)          => error.annotations(),
+            ConstructInstruction(error) => error.annotations(),
+        }
+    }
+
+    pub fn should_show(&self) -> bool {
+        use Error::*;
+        match self {
+            Lex(error)                  => error.should_show(),
+            Parse(error)                => error.should_show(),
+            MemoryPlacement(error)      => error.should_show(),
+            SymbolTable(error)          => error.should_show(),
+            ConstructInstruction(error) => error.should_show(),
+        }
+    }
+
 }
 
 // TODO: write macro for these From impls
@@ -241,7 +298,10 @@ impl ParseError {
         }
         annotations
     }
-    
+
+    pub fn should_show(&self) -> bool {
+        true
+    }
 
 }
 

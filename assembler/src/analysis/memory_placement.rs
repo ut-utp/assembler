@@ -4,6 +4,7 @@ use lc3_isa::Addr;
 use crate::ir::ir5_expand_pseudo_ops;
 use crate::error::ParseError;
 use crate::ir::ir4_parse_ambiguous_tokens::Checked;
+use annotate_snippets::snippet::SourceAnnotation;
 
 #[derive(Debug, Clone)]
 pub enum MemoryPlacementError {
@@ -15,6 +16,34 @@ pub enum MemoryPlacementError {
     },
     ObjectsOverlap
 }
+
+impl MemoryPlacementError {
+
+    pub fn message(&self) -> String {
+        use MemoryPlacementError::*;
+        match self {
+            InvalidOrigin { .. } => "could not validate memory placement due to error parsing .ORIG",
+            UnknownPseudoOpLength { .. } => "could not validate memory placement due to error parsing pseudo-op",
+            ObjectsOverlap => "two objects (.ORIG/.END blocks) would occupy same memory locations",
+        }.to_string()
+    }
+
+    pub fn annotations(&self) -> Vec<SourceAnnotation> {
+        vec![]
+    }
+
+    pub fn should_show(&self) -> bool {
+        use MemoryPlacementError::*;
+
+        match self {
+            InvalidOrigin { .. }
+            | UnknownPseudoOpLength { .. } => false,
+            ObjectsOverlap => true,
+        }
+    }
+
+}
+
 
 pub fn validate_placement(objects: &Vec<ir5_expand_pseudo_ops::Object>) -> Vec<MemoryPlacementError> {
     let starts_and_ends = objects.iter()

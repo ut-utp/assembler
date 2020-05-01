@@ -26,10 +26,10 @@ fn as_() {
         (version: env!("CARGO_PKG_VERSION"))
         (author: env!("CARGO_PKG_AUTHORS"))
         (about: env!("CARGO_PKG_DESCRIPTION"))
-        (@arg strict: -s --strict "Enforces all rules of the original LC-3 assembly language when validating the program")
-        (@arg check:  -c --check  "Checks the correctness of the program without attempting to assemble it")
-        (@arg with_os:  -o --with_os  "Overlays the program onto an image of the OS from lc3-os")
-        (@arg INPUT: +required ... "Paths to the programs to assemble")
+        (@arg  strict: -s --strict   "Enforces all rules of the original LC-3 assembly language when validating the program")
+        (@arg   check: -c --check    "Checks the correctness of the program without attempting to assemble it")
+        (@arg with_os: -o --with_os  "Overlays the program onto an image of the OS from lc3-os")
+        (@arg   INPUT: +required ... "Paths to the programs to assemble")
     ).get_matches();
 
     for path_str in matches.values_of("INPUT").unwrap() {
@@ -46,13 +46,15 @@ fn as_() {
         let errors = extract_errors(&program);
         if errors.len() > 0 {
             for error in errors {
-                let label_string = error.message();
-                let label = label_string.as_str();
-                let annotations = error.annotations();
-                let slices = slices(annotations, src, Some(path_str));
-                let snippet = create_snippet(label, slices);
-                let dl = DisplayList::from(snippet);
-                println!("{}", dl);
+                if error.should_show() {
+                    let label_string = error.message();
+                    let label = label_string.as_str();
+                    let annotations = error.annotations();
+                    let slices = slices(annotations, src, Some(path_str));
+                    let snippet = create_snippet(label, slices);
+                    let dl = DisplayList::from(snippet);
+                    println!("{}", dl);
+                }
             }
             break;
         }
@@ -61,7 +63,7 @@ fn as_() {
             println!("{}: No errors found.", path_str);
         } else {
             let background = if matches.is_present("with_os") { Some(lc3_os::OS_IMAGE.clone()) } else { None };
-            let mem = cst.assemble(background);
+            let mem = program.assemble(background);
 
             let mut output_path = PathBuf::from(path_str);
             output_path.set_extension(MEM_DUMP_FILE_EXTENSION);

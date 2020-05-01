@@ -66,7 +66,7 @@ fn test(input: &str, orig: usize, expected_mem: &[Word]) {
     let lexer = Lexer::new(input);
     let cst = parse(lexer, Lenient);
 
-    let mem = assemble(cst.objects, None);
+    let mem = cst.assemble(None);
     for i in 0..orig {
         assert_eq!(0x0000, mem[i], "differed at {:#x}", i)
     }

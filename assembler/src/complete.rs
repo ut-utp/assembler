@@ -8,6 +8,7 @@ use crate::ir::{ir2_parse_line_syntax, ir4_parse_ambiguous_tokens, ir5_expand_ps
 use std::collections::HashMap;
 use crate::analysis::memory_placement::{MemoryPlacementError, validate_placement};
 use lc3_isa::util::MemoryDump;
+use annotate_snippets::snippet::{AnnotationType, SourceAnnotation};
 
 /// `complete` will store as much data as possible
 /// relating to the source *and* what it will be assembled to.
@@ -123,6 +124,51 @@ pub enum ConstructInstructionError {
         span: Span,
         label: String,
     },
+}
+
+impl ConstructInstructionError {
+
+    pub fn message(&self) -> String {
+        use ConstructInstructionError::*;
+        match self {
+            EarlierParseError { .. } => format!("failed to construct instruction due to previous error parsing"),
+            SymbolTableInvalid { .. } => format!("failed to construct instruction due to previous errors constructing symbol table"),
+            InvalidLabel { label, .. } => format!("instruction references invalid label {}", label),
+        }
+    }
+
+    pub fn annotations(&self) -> Vec<SourceAnnotation> {
+        use ConstructInstructionError::*;
+
+        let mut annotations = Vec::new();
+
+        macro_rules! push_annotation {
+            ($range:expr, $label:expr) => {
+                annotations.push(
+                    SourceAnnotation {
+                        range: $range.clone(),
+                        label: $label,
+                        annotation_type: AnnotationType::Error,
+                    }
+                );
+            }
+        }
+        match self {
+            EarlierParseError { .. }
+            | SymbolTableInvalid { .. } => {},
+            InvalidLabel { span, .. } => { push_annotation!(span, "invalid label here") },
+        }
+        annotations
+    }
+
+    pub fn should_show(&self) -> bool {
+        use ConstructInstructionError::*;
+        match self {
+            EarlierParseError { .. }
+            | SymbolTableInvalid { .. } => false,
+            InvalidLabel { .. } => true,
+        }
+    }
 }
 
 pub fn construct_all_instructions(file: ir5_expand_pseudo_ops::File) -> Program {

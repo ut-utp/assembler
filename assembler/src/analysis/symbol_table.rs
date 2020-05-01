@@ -3,6 +3,7 @@ use lc3_isa::Addr;
 use crate::ir::ir5_expand_pseudo_ops;
 use crate::lexer::Span;
 use crate::error::ParseError;
+use annotate_snippets::snippet::{AnnotationType, SourceAnnotation};
 
 pub type SymbolTable<'input> = HashMap<&'input str, Addr>;
 
@@ -19,6 +20,57 @@ pub enum SymbolTableError {
         label_text: String
     }
 }
+
+impl SymbolTableError {
+
+    pub fn message(&self) -> String {
+        use SymbolTableError::*;
+        match self {
+            InvalidOrigin { .. } => format!("could not validate memory placement due to error parsing .ORIG"),
+            UnknownPseudoOpLength { .. } => format!("could not validate memory placement due to error parsing pseudo-op"),
+            DuplicateLabel { label_text, .. } => format!("duplicate label {}", label_text),
+        }
+    }
+
+    pub fn annotations(&self) -> Vec<SourceAnnotation> {
+        use SymbolTableError::*;
+        let mut annotations = Vec::new();
+
+        macro_rules! push_annotation {
+            ($range:expr, $label:expr) => {
+                annotations.push(
+                    SourceAnnotation {
+                        range: $range.clone(),
+                        label: $label,
+                        annotation_type: AnnotationType::Error,
+                    }
+                );
+            }
+        }
+
+        match self {
+            InvalidOrigin { .. }
+            | UnknownPseudoOpLength { .. } => {},
+            DuplicateLabel { ranges: (range1, range2), .. } => {
+                push_annotation!(range1, "first instance here");
+                push_annotation!(range2, "second instance here");
+            },
+        }
+        annotations
+    }
+
+    pub fn should_show(&self) -> bool {
+        use SymbolTableError::*;
+
+        match self {
+            InvalidOrigin { .. }
+            | UnknownPseudoOpLength { .. } => false,
+            DuplicateLabel { .. } => true,
+        }
+    }
+
+}
+
 
 pub fn build_symbol_table<'input>(object: &ir5_expand_pseudo_ops::Object<'input>) -> Result<HashMap<&'input str, Addr>, Vec<SymbolTableError>> {
     let mut symbol_table = HashMap::new();
