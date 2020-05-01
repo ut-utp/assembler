@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use crate::analysis::memory_placement::{MemoryPlacementError, validate_placement};
 use lc3_isa::util::MemoryDump;
 use annotate_snippets::snippet::{AnnotationType, SourceAnnotation};
+use crate::analysis::validate::validate;
 
 /// `complete` will store as much data as possible
 /// relating to the source *and* what it will be assembled to.
@@ -55,6 +56,31 @@ impl<'input> Program<'input> {
         memory
     }
 
+    pub fn assemble_safe(&self, background: Option<MemoryDump>) -> Result<MemoryDump, Vec<Error>> {
+        validate(self)
+            .map(|_| self.assemble(background))
+    }
+
+}
+
+impl<'input> Program<'input> {
+    pub fn get_source(&self, address: Addr) -> Option<Vec<String>> {
+        for object in &self.objects {
+            if let Some(source) = object.get_source(address) {
+                return Some(source);
+            }
+        }
+        None
+    }
+
+    pub fn get_label_addr(&self, label: &str) -> Option<Addr> {
+        for object in &self.objects {
+            if let Some(addr) = object.get_label_addr(label) {
+                return Some(addr);
+            }
+        }
+        None
+    }
 }
 
 #[derive(Debug)]
@@ -63,6 +89,51 @@ pub struct Object<'input> {
     pub origin: Immediate<'input, Addr>,
     pub content: ObjectContent<'input>,
     pub symbol_table: SymbolTable<'input>,
+}
+
+impl<'input> Object<'input> {
+    pub fn get_source(&self, address: Addr) -> Option<Vec<String>> {
+        match &self.origin.value {
+            Err(err) => None,
+            Ok(origin) => {
+                if address < *origin {
+                    return None;
+                }
+                let mut i = *origin as usize;
+                for operation in &self.content.operations {
+                    if i as Addr == address {
+                        return Some(operation.src_lines.clone());
+                    }
+                    match operation.num_memory_locations_occupied() {
+                        Err(_) => { return None; },
+                        Ok(len) => { i += len },
+                    }
+                }
+                None
+            }
+        }
+    }
+
+    pub fn get_label_addr(&self, label_to_find: &str) -> Option<Addr> {
+        match &self.origin.value {
+            Err(err) => None,
+            Ok(origin) => {
+                let mut i = *origin as usize;
+                for operation in &self.content.operations {
+                    if let Some(Checked { value: Ok(label), .. }) = &operation.label {
+                        if *label == label_to_find {
+                            return Some(i as Addr);
+                        }
+                    }
+                    match operation.num_memory_locations_occupied() {
+                        Err(_) => { return None; },
+                        Ok(len) => { i += len },
+                    }
+                }
+                None
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
