@@ -9,6 +9,9 @@ use crate::ir::ir4_parse_ambiguous_tokens::{Object, ObjectContent, Operation, Op
 use lc3_isa::SignedWord;
 use crate::ir::ir2_parse_line_syntax::LineContent::Invalid;
 use annotate_snippets::display_list::FormatOptions;
+use crate::analysis::memory_placement::MemoryPlacementError;
+use crate::analysis::symbol_table::SymbolTableError;
+use crate::complete::ConstructInstructionError;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LexError {
@@ -18,6 +21,7 @@ pub enum LexError {
 
 #[derive(Debug, Clone)]
 pub enum ParseError {
+    NoObjects,
     InvalidReg {
         range: Span,
         reason: InvalidRegReason
@@ -47,6 +51,75 @@ pub enum ParseError {
         invalid_immediate_reason: InvalidImmediateReason,
     },
     Misc(String),
+}
+
+pub enum Error {
+    Lex(LexError),
+    Parse(ParseError),
+    MemoryPlacement(MemoryPlacementError),
+    SymbolTable(SymbolTableError),
+    ConstructInstruction(ConstructInstructionError),
+}
+
+// TODO: write macro for these From impls
+impl From<LexError> for Error {
+    fn from(error: LexError) -> Self {
+        Error::Lex(error)
+    }
+}
+
+impl From<&LexError> for Error {
+    fn from(error: &LexError) -> Self {
+        Error::Lex(error.clone())
+    }
+}
+
+impl From<ParseError> for Error {
+    fn from(error: ParseError) -> Self {
+        Error::Parse(error)
+    }
+}
+
+impl From<&ParseError> for Error {
+    fn from(error: &ParseError) -> Self {
+        Error::Parse(error.clone())
+    }
+}
+
+impl From<MemoryPlacementError> for Error {
+    fn from(error: MemoryPlacementError) -> Self {
+        Error::MemoryPlacement(error)
+    }
+}
+
+impl From<&MemoryPlacementError> for Error {
+    fn from(error: &MemoryPlacementError) -> Self {
+        Error::MemoryPlacement(error.clone())
+    }
+}
+
+impl From<SymbolTableError> for Error {
+    fn from(error: SymbolTableError) -> Self {
+        Error::SymbolTable(error)
+    }
+}
+
+impl From<&SymbolTableError> for Error {
+    fn from(error: &SymbolTableError) -> Self {
+        Error::SymbolTable(error.clone())
+    }
+}
+
+impl From<ConstructInstructionError> for Error {
+    fn from(error: ConstructInstructionError) -> Self {
+        Error::ConstructInstruction(error)
+    }
+}
+
+impl From<&ConstructInstructionError> for Error {
+    fn from(error: &ConstructInstructionError) -> Self {
+        Error::ConstructInstruction(error.clone())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +204,9 @@ impl ParseError {
                         invalid_label_reasons.iter().map(InvalidLabelReason::to_string).join(", "),
                         invalid_immediate_reason)
             }
+            NoObjects => {
+                format!("no objects (.ORIG/.END blocks) found in file")
+            }
         }
     }
     
@@ -160,7 +236,8 @@ impl ParseError {
             InvalidImmediate { range, .. } => { push_annotation!(range, "invalid immediate here"); }
             InvalidRegOrImm5 { range, .. } => { push_annotation!(range, "invalid register or immediate here"); }
             InvalidLabelOrImmediate { range, .. } => { push_annotation!(range, "invalid label or immediate here"); }
-            Misc(_) => {},
+            NoObjects
+            | Misc(_) => {},
         }
         annotations
     }
@@ -168,158 +245,3 @@ impl ParseError {
 
 }
 
-pub fn extract_file_errors(cst: ir4_parse_ambiguous_tokens::File) -> Vec<ParseError> {
-    let mut errors = Vec::new();
-
-    let ir4_parse_ambiguous_tokens::File { objects, .. } = cst;
-    if objects.len() == 0 {
-        errors.push(ParseError::Misc("File contained no objects.".to_string()));
-    }
-
-    for object in objects {
-        errors.extend(extract_object_errors(object))
-    }
-
-    errors
-}
-
-fn extract_object_errors(object: Object) -> Vec<ParseError> {
-    let mut errors = Vec::new();
-
-    let Object { origin, content, .. } = object;
-
-    origin.extract_error_into(&mut errors);
-    errors.extend(extract_object_content_errors(content));
-
-    errors
-}
-
-fn extract_object_content_errors(object_content: ObjectContent) -> Vec<ParseError> {
-    let mut errors = Vec::new();
-
-    let ObjectContent { operations, hanging_labels, invalid_lines, .. } = object_content;
-
-    for operation in operations {
-        errors.extend(extract_operation_errors(operation));
-    }
-
-    for hanging_label in hanging_labels {
-        let range = hanging_label.span().unwrap();
-        errors.push(ParseError::HangingLabel { range });
-    }
-
-    for invalid_line in invalid_lines {
-        let range = invalid_line.span();
-        errors.push(ParseError::InvalidLine { range });
-    }
-
-    errors
-}
-
-fn extract_operation_errors(operation: Operation) -> Vec<ParseError> {
-    let mut errors = Vec::new();
-
-    let Operation { label, operands, nzp, .. } = operation;
-
-    if let Some(label) = label {
-        label.extract_error_into(&mut errors);
-    }
-
-    errors.extend(extract_operands_errors(operands));
-    
-    if let Err(error) = nzp {
-        errors.push(error);
-    }
-
-    errors
-}
-
-fn extract_operands_errors(operands: Operands) -> Vec<ParseError> {
-    use Operands::*;
-
-    let mut errors = Vec::new();
-    match operands {
-        Add { dr, sr1, sr2_or_imm5 } => {
-            dr.extract_error_into(&mut errors);
-            sr1.extract_error_into(&mut errors);
-            sr2_or_imm5.extract_error_into(&mut errors);
-        },
-        And { dr, sr1, sr2_or_imm5 } => {
-            dr.extract_error_into(&mut errors);
-            sr1.extract_error_into(&mut errors);
-            sr2_or_imm5.extract_error_into(&mut errors);
-        },
-        Br { pc_offset9 } => {
-            pc_offset9.extract_error_into(&mut errors);
-        },
-        Jmp { base } => {
-            base.extract_error_into(&mut errors);
-        },
-        Jsr { pc_offset11 } => {
-            pc_offset11.extract_error_into(&mut errors);
-        },
-        Jsrr { base } => {
-            base.extract_error_into(&mut errors);
-        },
-        Ld { dr, pc_offset9 } => {
-            dr.extract_error_into(&mut errors);
-            pc_offset9.extract_error_into(&mut errors);
-        },
-        Ldi { dr, pc_offset9 } => {
-            dr.extract_error_into(&mut errors);
-            pc_offset9.extract_error_into(&mut errors);
-        },
-        Ldr { dr, base, offset6 } => {
-            dr.extract_error_into(&mut errors);
-            base.extract_error_into(&mut errors);
-            offset6.extract_error_into(&mut errors);
-        },
-        Lea { dr, pc_offset9 } => {
-            dr.extract_error_into(&mut errors);
-            pc_offset9.extract_error_into(&mut errors);
-        },
-        Not { dr, sr } => {
-            dr.extract_error_into(&mut errors);
-            sr.extract_error_into(&mut errors);
-        },
-        St { sr, pc_offset9 } => {
-            sr.extract_error_into(&mut errors);
-            pc_offset9.extract_error_into(&mut errors);
-        }
-        Sti { sr, pc_offset9 } => {
-            sr.extract_error_into(&mut errors);
-            pc_offset9.extract_error_into(&mut errors);
-        }
-        Str { sr, base, offset6 } => {
-            sr.extract_error_into(&mut errors);
-            base.extract_error_into(&mut errors);
-            offset6.extract_error_into(&mut errors);
-        }
-        Trap { trap_vec } => {
-            trap_vec.extract_error_into(&mut errors);
-        }
-        Orig { origin } => {
-            origin.extract_error_into(&mut errors);
-        }
-        Fill { value } => {
-            value.extract_error_into(&mut errors);
-        }
-        Blkw { size, .. } => {
-            size.extract_error_into(&mut errors);
-        }
-        Stringz { .. } => {}
-
-        // Putting these in instead of _ to avoid forgetting to change
-        Ret
-        | Rti
-        | Getc
-        | Out
-        | Puts
-        | In
-        | Putsp
-        | Halt
-        | End => {}
-    };
-
-    errors
-}

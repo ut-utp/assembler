@@ -16,7 +16,7 @@ pub enum MemoryPlacementError {
     ObjectsOverlap
 }
 
-pub fn validate_placement(objects: &Vec<ir5_expand_pseudo_ops::Object>) -> Result<(), Vec<MemoryPlacementError>> {
+pub fn validate_placement(objects: &Vec<ir5_expand_pseudo_ops::Object>) -> Vec<MemoryPlacementError> {
     let starts_and_ends = objects.iter()
         .map(get_start_and_end)
         .collect::<Vec<_>>();
@@ -27,7 +27,7 @@ pub fn validate_placement(objects: &Vec<ir5_expand_pseudo_ops::Object>) -> Resul
         }
     }
     if !errors.is_empty() {
-        return Err(errors);
+        return errors;
     }
     let start_end_pairs = starts_and_ends.into_iter()
         .map(|start_and_end| start_and_end.unwrap())
@@ -38,10 +38,7 @@ pub fn validate_placement(objects: &Vec<ir5_expand_pseudo_ops::Object>) -> Resul
             errors.push(MemoryPlacementError::ObjectsOverlap);
         }
     }
-    if !errors.is_empty() {
-        return Err(errors);
-    }
-    Ok(())
+    errors
 }
 
 /// Returns the first memory location the object occupies and the first memory location after the object.

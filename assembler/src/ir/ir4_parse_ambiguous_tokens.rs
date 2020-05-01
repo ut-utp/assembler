@@ -3,7 +3,7 @@ use num_traits::Num;
 use std::string::ToString;
 use lc3_isa::{Addr, SignedWord, check_signed_imm, Word};
 
-use crate::error::{ParseError, InvalidLabelReason, InvalidRegReason, InvalidImmediateReason};
+use crate::error::{ParseError, InvalidLabelReason, InvalidRegReason, InvalidImmediateReason, Error};
 use crate::lexer::Token;
 use crate::ir::ir2_parse_line_syntax;
 use crate::ir::ir3_parse_objects;
@@ -60,9 +60,9 @@ impl<'input, T> Checked<'input, T> {
         self.value.unwrap()
     }
 
-    pub fn extract_error_into(self, errors: &mut Vec<ParseError>) {
-        if let Err(error) = self.value {
-            errors.push(error);
+    pub fn extract_error_into(&self, errors: &mut Vec<Error>) {
+        if let Err(error) = &self.value {
+            errors.push(error.into());
         }
     }
 }

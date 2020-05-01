@@ -6,6 +6,7 @@ use crate::error::ParseError;
 use crate::ir::ir4_parse_ambiguous_tokens::{UnsignedImmOrLabel, ImmOrLabel, Sr2OrImm5, Checked};
 use crate::ir::{ir2_parse_line_syntax, ir4_parse_ambiguous_tokens, ir5_expand_pseudo_ops,};
 use std::collections::HashMap;
+use crate::analysis::memory_placement::{MemoryPlacementError, validate_placement};
 
 /// `complete` will store as much data as possible
 /// relating to the source *and* what it will be assembled to.
@@ -19,6 +20,7 @@ pub type SymbolTable<'input> = Result<symbol_table::SymbolTable<'input>, Vec<Sym
 
 pub struct Program<'input> {
     pub objects: Vec<Object<'input>>,
+    pub memory_placement_errors: Vec<MemoryPlacementError>,
     pub ignored: Vec<ir2_parse_line_syntax::Line<'input>>,
 }
 
@@ -89,10 +91,11 @@ pub enum ConstructInstructionError {
 
 pub fn construct_all_instructions(file: ir5_expand_pseudo_ops::File) -> Program {
     let ir5_expand_pseudo_ops::File { objects, ignored } = file;
+    let memory_placement_errors = validate_placement(&objects);
     let objects = objects.into_iter()
         .map(construct_instructions)
         .collect();
-    Program { objects, ignored }
+    Program { objects, memory_placement_errors, ignored }
 }
 
 pub fn construct_instructions(object: ir5_expand_pseudo_ops::Object) -> Object {
