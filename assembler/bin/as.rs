@@ -7,7 +7,7 @@ use lc3_assembler::parser::parse;
 use lc3_shims::memory::FileBackedMemoryShim;
 use clap::clap_app;
 use lc3_assembler::parser::LeniencyLevel::*;
-use lc3_assembler::error::{extract_file_errors, ParseError};
+use lc3_assembler::analysis::extract_errors::extract_errors;
 use annotate_snippets::display_list::{DisplayList, FormatOptions};
 use annotate_snippets::snippet::{Snippet, Annotation, Slice, AnnotationType, SourceAnnotation};
 
@@ -41,9 +41,9 @@ fn as_() {
         let string = fs::read_to_string(path).unwrap();
         let src = string.as_str();
         let lexer = Lexer::new(src);
-        let cst = parse(lexer, leniency);
+        let program = parse(lexer, leniency);
 
-        let errors = extract_file_errors(cst.clone());
+        let errors = extract_errors(&program);
         if errors.len() > 0 {
             for error in errors {
                 let label_string = error.message();
@@ -61,7 +61,7 @@ fn as_() {
             println!("{}: No errors found.", path_str);
         } else {
             let background = if matches.is_present("with_os") { Some(lc3_os::OS_IMAGE.clone()) } else { None };
-            let mem = assemble(cst.objects, background);
+            let mem = cst.assemble(background);
 
             let mut output_path = PathBuf::from(path_str);
             output_path.set_extension(MEM_DUMP_FILE_EXTENSION);

@@ -2,11 +2,12 @@ use lc3_isa::{Addr, Word, Instruction, SignedWord};
 use crate::lexer::{Token, Span};
 use crate::analysis::symbol_table;
 use crate::analysis::symbol_table::{SymbolTableError, build_symbol_table};
-use crate::error::ParseError;
+use crate::error::{ParseError, Error};
 use crate::ir::ir4_parse_ambiguous_tokens::{UnsignedImmOrLabel, ImmOrLabel, Sr2OrImm5, Checked};
 use crate::ir::{ir2_parse_line_syntax, ir4_parse_ambiguous_tokens, ir5_expand_pseudo_ops,};
 use std::collections::HashMap;
 use crate::analysis::memory_placement::{MemoryPlacementError, validate_placement};
+use lc3_isa::util::MemoryDump;
 
 /// `complete` will store as much data as possible
 /// relating to the source *and* what it will be assembled to.
@@ -18,12 +19,44 @@ pub type Label<'input> = ir5_expand_pseudo_ops::Label<'input>;
 pub type Immediate<'input, Addr> = ir5_expand_pseudo_ops::Immediate<'input, Addr>;
 pub type SymbolTable<'input> = Result<symbol_table::SymbolTable<'input>, Vec<SymbolTableError>>;
 
+#[derive(Debug)]
 pub struct Program<'input> {
     pub objects: Vec<Object<'input>>,
     pub memory_placement_errors: Vec<MemoryPlacementError>,
     pub ignored: Vec<ir2_parse_line_syntax::Line<'input>>,
 }
 
+impl<'input> Program<'input> {
+
+    pub fn assemble(&self, background: Option<MemoryDump>) -> MemoryDump {
+        let mut memory = if let Some(bg) = background {
+            MemoryDump::from(bg)
+        } else {
+            MemoryDump::blank()
+        };
+        for object in &self.objects {
+            let mut i = *object.origin.value.as_ref().unwrap() as usize;
+            for operation in &object.content.operations {
+                match operation.instruction_or_values.as_ref().unwrap() {
+                    InstructionOrValues::Instruction(_, word) => {
+                        memory[i] = *word;
+                        i += 1;
+                    },
+                    InstructionOrValues::Values(values) => {
+                        for value in values {
+                            memory[i] = *value;
+                            i += 1;
+                        }
+                    },
+                }
+            }
+        }
+        memory
+    }
+
+}
+
+#[derive(Debug)]
 pub struct Object<'input> {
     pub origin_src: ir5_expand_pseudo_ops::Operation<'input>,
     pub origin: Immediate<'input, Addr>,
@@ -31,6 +64,7 @@ pub struct Object<'input> {
     pub symbol_table: SymbolTable<'input>,
 }
 
+#[derive(Debug)]
 pub struct ObjectContent<'input> {
     pub operations: Vec<Operation<'input>>,
     pub empty_lines: Vec<ir2_parse_line_syntax::Line<'input>>,
@@ -38,6 +72,7 @@ pub struct ObjectContent<'input> {
     pub invalid_lines: Vec<ir2_parse_line_syntax::Line<'input>>,
 }
 
+#[derive(Debug)]
 pub struct Operation<'input> {
     pub label: Option<Label<'input>>,
     pub operator: Token<'input>,
@@ -53,6 +88,7 @@ pub struct Operation<'input> {
     pub instruction_or_values: Result<InstructionOrValues, ConstructInstructionError>,
 }
 
+#[derive(Debug)]
 pub enum InstructionOrValues {
     Instruction(Instruction, Word),
     Values(Vec<Word>),
@@ -75,7 +111,7 @@ pub type Operands<'input> = ir5_expand_pseudo_ops::Operands<'input>;
 pub type ConditionCodes = ir5_expand_pseudo_ops::ConditionCodes;
 pub type Separator<'input> = ir5_expand_pseudo_ops::Separator<'input>;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum ConstructInstructionError {
     EarlierParseError {
         error: ParseError,

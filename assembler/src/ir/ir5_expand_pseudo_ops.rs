@@ -27,6 +27,7 @@ pub struct ObjectContent<'input> {
     pub invalid_lines: Vec<ir2_parse_line_syntax::Line<'input>>,
 }
 
+#[derive(Debug)]
 pub struct Operation<'input> {
     pub label: Option<Label<'input>>,
     pub operator: Token<'input>,
