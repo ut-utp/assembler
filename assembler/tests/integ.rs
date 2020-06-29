@@ -4,6 +4,8 @@ use lc3_assembler::lexer::Lexer;
 use lc3_assembler::parser::parse;
 use lc3_isa::Word;
 use lc3_assembler::parser::LeniencyLevel::Lenient;
+use std::ops::Index;
+use lc3_isa::util::MemoryDump;
 
 
 #[test]
@@ -61,6 +63,31 @@ fn pseudo_ops() {
     );
 }
 
+#[test]
+fn add() {
+    single_instruction_tests(&[
+        ("ADD R0 R0 R0", 0x1000),
+        ("ADD R1 R2 R3", 0x1283),
+        ("ADD R4 R5 R6", 0x1946),
+        ("ADD R7 R7 #0", 0x1FE0),
+        ("ADD R7 R7 #1", 0x1FE1),
+        ("ADD R7 R7 #15", 0x1FEF),
+        ("ADD R7 R7 #-1", 0x1FFF),
+    ]);
+}
+
+#[test]
+fn and() {
+    single_instruction_tests(&[
+        ("AND R0 R0 R0", 0x5000),
+        ("AND R1 R2 R3", 0x5283),
+        ("AND R4 R5 R6", 0x5946),
+        ("AND R7 R7 #0", 0x5FE0),
+        ("AND R7 R7 #1", 0x5FE1),
+        ("AND R7 R7 #15", 0x5FEF),
+        ("AND R7 R7 #-1", 0x5FFF),
+    ]);
+}
 
 fn test(input: &str, orig: usize, expected_mem: &[Word]) {
     let lexer = Lexer::new(input);
@@ -68,12 +95,29 @@ fn test(input: &str, orig: usize, expected_mem: &[Word]) {
 
     let mem = cst.assemble(None);
     for i in 0..orig {
-        assert_eq!(0x0000, mem[i], "differed at {:#x}", i)
+        assert_mem(&mem, i, 0x0000);
     }
     for i in 0..expected_mem.len() {
-        assert_eq!(expected_mem[i], mem[orig + i], "differed at {:#x}", orig + i)
+        assert_mem(&mem, orig + i, expected_mem[i]);
     }
     for i in (orig + expected_mem.len())..0xFFFF {
-        assert_eq!(0x0000, mem[i], "differed at {:#x}", i)
+        assert_mem(&mem, i, 0x0000);
     }
+}
+
+fn single_instruction_tests(tests: &[(&str, Word)]) {
+    for (input, expected) in tests {
+        single_instruction_test(input, *expected);
+    }
+}
+
+fn single_instruction_test(input: &str, expected: Word) {
+    let input = format!(".ORIG x3000\n{}\n.END", input);
+    test(input.as_str(), 0x3000, &[expected]);
+}
+
+
+fn assert_mem(mem: &MemoryDump, location: usize, expected: Word) {
+    let actual = mem[location];
+    assert_eq!(expected, actual, "differed at {:#x}: expected {:#x}, was {:#x}", location, expected, actual);
 }
