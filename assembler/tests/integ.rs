@@ -89,6 +89,96 @@ fn and() {
     ]);
 }
 
+#[test]
+fn jmp() {
+    single_instruction_tests(&[
+        ("JMP R0", 0xC000),
+        ("JMP R1", 0xC040),
+        ("JMP R2", 0xC080),
+        ("JMP R3", 0xC0C0),
+        ("JMP R4", 0xC100),
+        ("JMP R5", 0xC140),
+        ("JMP R6", 0xC180),
+        ("JMP R7", 0xC1C0),
+    ])
+}
+
+#[test]
+fn jsrr() {
+    single_instruction_tests(&[
+        ("JSRR R0", 0x4000),
+        ("JSRR R1", 0x4040),
+        ("JSRR R2", 0x4080),
+        ("JSRR R3", 0x40C0),
+        ("JSRR R4", 0x4100),
+        ("JSRR R5", 0x4140),
+        ("JSRR R6", 0x4180),
+        ("JSRR R7", 0x41C0),
+    ])
+}
+
+#[test]
+fn rti() {
+    single_instruction_test("RTI", 0x8000);
+}
+
+#[test]
+fn ret() {
+    single_instruction_test("RET", 0xC1C0);
+}
+
+#[test]
+fn ldr() {
+    single_instruction_tests(&[
+        ("LDR R0 R0 #0", 0x6000),
+        ("LDR R1 R2 #3", 0x6283),
+        ("LDR R3 R4 #31", 0x671F),
+        ("LDR R5 R6 #-1", 0x6BBF),
+        ("LDR R7 R7 #-32", 0x6FE0),
+    ])
+}
+
+#[test]
+fn not() {
+    single_instruction_tests(&[
+        ("NOT R0 R1", 0x907F),
+        ("NOT R2 R3", 0x94FF),
+        ("NOT R4 R5", 0x997F),
+        ("NOT R6 R7", 0x9DFF),
+    ])
+}
+
+#[test]
+fn str() {
+    single_instruction_tests(&[
+        ("STR R0 R0 #0", 0x7000),
+        ("STR R1 R2 #3", 0x7283),
+        ("STR R3 R4 #31", 0x771F),
+        ("STR R5 R6 #-1", 0x7BBF),
+        ("STR R7 R7 #-32", 0x7FE0),
+    ])
+}
+
+#[test]
+fn trap() {
+    single_instruction_tests(&[
+        ("TRAP x00", 0xF000),
+        ("TRAP x25", 0xF025),
+        ("TRAP xFF", 0xF0FF),
+        ("TRAP #37", 0xF025),
+    ])
+}
+
+// TODO: BR
+// TODO: JSR
+// TODO: LD
+// TODO: LDI
+// TODO: ST
+// TODO: STI
+// TODO: LEA
+// TODO: Named TRAPs
+// TODO: Pseudo-ops
+
 fn test(input: &str, orig: usize, expected_mem: &[Word]) {
     let lexer = Lexer::new(input);
     let cst = parse(lexer, Lenient);
