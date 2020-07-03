@@ -202,30 +202,47 @@ mod single_instruction {
     // for the boilerplate like "($opcode << 12) + ".
     // Consider adding a variant in single_instruction_tests for this case?
     macro_rules! reg_and_pcoffset9_instruction_tests {
-        ($name:ident, $operator:expr, $opcode:expr) => {
-            single_instruction_tests! { $name
-                //                    OPERANDS                                    RESULT
-                //                    --------                                    -----
-                minimal: ($operator + " R0 #0").as_str()    => (($opcode << 12) + 0x000),
-                pos_imm: ($operator + " R1 #1").as_str()    => (($opcode << 12) + 0x201),
-                neg_imm: ($operator + " R2 #-1").as_str()   => (($opcode << 12) + 0x5FF),
-                max_imm: ($operator + " R3 #255").as_str()  => (($opcode << 12) + 0x6FF),
-                min_imm: ($operator + " R4 #-256").as_str() => (($opcode << 12) + 0x900),
-                // hex_imm: ($operator + " R5 xA").as_str()    => (($opcode << 12) + 0xA0A), TODO: We currently assume an argument not starting in # is a label. Allow hex literals?
-                r5:      ($operator + " R5 #0").as_str()    => (($opcode << 12) + 0xA00),
-                r6:      ($operator + " R6 #0").as_str()    => (($opcode << 12) + 0xC00),
-                r7:      ($operator + " R7 #0").as_str()    => (($opcode << 12) + 0xE00),
-            }
+        (
+            $(
+                $name:ident: $operator:expr => $opcode:expr
+            ),+
+            $(,)*
+        ) => {
+            $(
+                single_instruction_tests! { $name
+                    //                    OPERANDS                                    RESULT
+                    //                    --------                                    -----
+                    minimal: ($operator + " R0 #0").as_str()    => (($opcode << 12) + 0x000),
+                    pos_imm: ($operator + " R1 #1").as_str()    => (($opcode << 12) + 0x201),
+                    neg_imm: ($operator + " R2 #-1").as_str()   => (($opcode << 12) + 0x5FF),
+                    max_imm: ($operator + " R3 #255").as_str()  => (($opcode << 12) + 0x6FF),
+                    min_imm: ($operator + " R4 #-256").as_str() => (($opcode << 12) + 0x900),
+                    // hex_imm: ($operator + " R5 xA").as_str()    => (($opcode << 12) + 0xA0A), TODO: We currently assume an argument not starting in # is a label. Allow hex literals?
+                    r5:      ($operator + " R5 #0").as_str()    => (($opcode << 12) + 0xA00),
+                    r6:      ($operator + " R6 #0").as_str()    => (($opcode << 12) + 0xC00),
+                    r7:      ($operator + " R7 #0").as_str()    => (($opcode << 12) + 0xE00),
+                }
+            )+
         };
     }
 
-    reg_and_pcoffset9_instruction_tests!(ld,  "LD".to_string(),  0x2);
-    reg_and_pcoffset9_instruction_tests!(ldi, "LDI".to_string(), 0xA);
-    reg_and_pcoffset9_instruction_tests!(st,  "ST".to_string(),  0x3);
-    reg_and_pcoffset9_instruction_tests!(sti, "STI".to_string(), 0xB);
+    reg_and_pcoffset9_instruction_tests! {
+        ld:  "LD".to_string()  => 0x2,
+        ldi: "LDI".to_string() => 0xA,
+        lea: "LEA".to_string() => 0xE,
+        st:  "ST".to_string()  => 0x3,
+        sti: "STI".to_string() => 0xB,
+    }
 
-// TODO: JSR
-// TODO: LEA
+    single_instruction_tests! { jsr
+        minimal: "JSR #0"     => 0x4800,
+        pos_imm: "JSR #1"     => 0x4801,
+        neg_imm: "JSR #-1"    => 0x4FFF,
+        max_imm: "JSR #1023"  => 0x4BFF,
+        min_imm: "JSR #-1024" => 0x4C00,
+        // hex_imm: "JSR xA"     => 0x480A, // TODO: We currently assume an argument not starting in # is a label. Allow hex literals?
+    }
+
 // TODO: Pseudo-ops
 
 }
