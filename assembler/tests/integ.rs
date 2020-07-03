@@ -210,28 +210,28 @@ mod single_instruction {
         ) => {
             $(
                 single_instruction_tests! { $name
-                    //                    OPERANDS                                    RESULT
-                    //                    --------                                    -----
-                    minimal: ($operator + " R0 #0").as_str()    => (($opcode << 12) + 0x000),
-                    pos_imm: ($operator + " R1 #1").as_str()    => (($opcode << 12) + 0x201),
-                    neg_imm: ($operator + " R2 #-1").as_str()   => (($opcode << 12) + 0x5FF),
-                    max_imm: ($operator + " R3 #255").as_str()  => (($opcode << 12) + 0x6FF),
-                    min_imm: ($operator + " R4 #-256").as_str() => (($opcode << 12) + 0x900),
-                    // hex_imm: ($operator + " R5 xA").as_str()    => (($opcode << 12) + 0xA0A), TODO: We currently assume an argument not starting in # is a label. Allow hex literals?
-                    r5:      ($operator + " R5 #0").as_str()    => (($opcode << 12) + 0xA00),
-                    r6:      ($operator + " R6 #0").as_str()    => (($opcode << 12) + 0xC00),
-                    r7:      ($operator + " R7 #0").as_str()    => (($opcode << 12) + 0xE00),
+                    //                                OPERANDS                                    RESULT
+                    //                                --------                                    -----
+                    minimal: ($operator.to_string() + " R0 #0").as_str()    => (($opcode << 12) + 0x000),
+                    pos_imm: ($operator.to_string() + " R1 #1").as_str()    => (($opcode << 12) + 0x201),
+                    neg_imm: ($operator.to_string() + " R2 #-1").as_str()   => (($opcode << 12) + 0x5FF),
+                    max_imm: ($operator.to_string() + " R3 #255").as_str()  => (($opcode << 12) + 0x6FF),
+                    min_imm: ($operator.to_string() + " R4 #-256").as_str() => (($opcode << 12) + 0x900),
+                    // hex_imm: ($operator.to_string() + " R5 xA").as_str()    => (($opcode << 12) + 0xA0A), TODO: We currently assume an argument not starting in # is a label. Allow hex literals?
+                    r5:      ($operator.to_string() + " R5 #0").as_str()    => (($opcode << 12) + 0xA00),
+                    r6:      ($operator.to_string() + " R6 #0").as_str()    => (($opcode << 12) + 0xC00),
+                    r7:      ($operator.to_string() + " R7 #0").as_str()    => (($opcode << 12) + 0xE00),
                 }
             )+
         };
     }
 
     reg_and_pcoffset9_instruction_tests! {
-        ld:  "LD".to_string()  => 0x2,
-        ldi: "LDI".to_string() => 0xA,
-        lea: "LEA".to_string() => 0xE,
-        st:  "ST".to_string()  => 0x3,
-        sti: "STI".to_string() => 0xB,
+        ld:  "LD"  => 0x2,
+        ldi: "LDI" => 0xA,
+        lea: "LEA" => 0xE,
+        st:  "ST"  => 0x3,
+        sti: "STI" => 0xB,
     }
 
     single_instruction_tests! { jsr
