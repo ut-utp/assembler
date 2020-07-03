@@ -182,12 +182,49 @@ mod single_instruction {
         halt:  "HALT"  => 0xF025,
     }
 
-// TODO: BR
+    single_instruction_tests! { br
+        minimal: "BR #0"     => 0x0E00,
+        n:       "BRn #0"    => 0x0800,
+        z:       "BRz #0"    => 0x0400,
+        p:       "BRp #0"    => 0x0200,
+        nz:      "BRnz #0"   => 0x0C00,
+        np:      "BRnp #0"   => 0x0A00,
+        zp:      "BRzp #0"   => 0x0600,
+        nzp:     "BRnzp #0"  => 0x0E00,
+        neg_imm: "BRnzp #-1" => 0x0FFF,
+        pos_imm: "BRnzp #1"  => 0x0E01,
+        max_imm: "BRn #255"  => 0x08FF,
+        min_imm: "BRz #-256" => 0x0500,
+    }
+
+    // TODO: make this more readable :(
+    // I couldn't find a way to rearrange the macros to create one
+    // for the boilerplate like "($opcode << 12) + ".
+    // Consider adding a variant in single_instruction_tests for this case?
+    macro_rules! reg_and_pcoffset9_instruction_tests {
+        ($name:ident, $operator:expr, $opcode:expr) => {
+            single_instruction_tests! { $name
+                //                    OPERANDS                                    RESULT
+                //                    --------                                    -----
+                minimal: ($operator + " R0 #0").as_str()    => (($opcode << 12) + 0x000),
+                pos_imm: ($operator + " R1 #1").as_str()    => (($opcode << 12) + 0x201),
+                neg_imm: ($operator + " R2 #-1").as_str()   => (($opcode << 12) + 0x5FF),
+                max_imm: ($operator + " R3 #255").as_str()  => (($opcode << 12) + 0x6FF),
+                min_imm: ($operator + " R4 #-256").as_str() => (($opcode << 12) + 0x900),
+                // hex_imm: ($operator + " R5 xA").as_str()    => (($opcode << 12) + 0xA0A), TODO: We currently assume an argument not starting in # is a label. Allow hex literals?
+                r5:      ($operator + " R5 #0").as_str()    => (($opcode << 12) + 0xA00),
+                r6:      ($operator + " R6 #0").as_str()    => (($opcode << 12) + 0xC00),
+                r7:      ($operator + " R7 #0").as_str()    => (($opcode << 12) + 0xE00),
+            }
+        };
+    }
+
+    reg_and_pcoffset9_instruction_tests!(ld,  "LD".to_string(),  0x2);
+    reg_and_pcoffset9_instruction_tests!(ldi, "LDI".to_string(), 0xA);
+    reg_and_pcoffset9_instruction_tests!(st,  "ST".to_string(),  0x3);
+    reg_and_pcoffset9_instruction_tests!(sti, "STI".to_string(), 0xB);
+
 // TODO: JSR
-// TODO: LD
-// TODO: LDI
-// TODO: ST
-// TODO: STI
 // TODO: LEA
 // TODO: Pseudo-ops
 
