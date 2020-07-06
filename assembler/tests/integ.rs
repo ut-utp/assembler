@@ -66,9 +66,13 @@ fn pseudo_ops() {
 mod single_instruction {
     use super::*;
 
-    fn single_instruction_test(input: &str, expected: Word) {
+    fn single_instruction_multiple_output_test(input: &str, expected: &[Word]) {
         let input = format!(".ORIG x3000\n{}\n.END", input);
-        test(input.as_str(), 0x3000, &[expected]);
+        test(input.as_str(), 0x3000, expected);
+    }
+
+    fn single_instruction_test(input: &str, expected: Word) {
+        single_instruction_multiple_output_test(input, &[expected]);
     }
 
     macro_rules! single_instruction_tests {
@@ -243,8 +247,51 @@ mod single_instruction {
         // hex_imm: "JSR xA"     => 0x480A, // TODO: We currently assume an argument not starting in # is a label. Allow hex literals?
     }
 
-// TODO: Pseudo-ops
+    mod pseudo_ops {
+        use super::*;
 
+        single_instruction_tests! { fill
+            minimal:     ".FILL #0"     => 0x0000,
+            pos_imm:     ".FILL #1"     => 0x0001,
+            max_imm:     ".FILL #65535" => 0xFFFF,
+            hex_imm:     ".FILL xA"     => 0x000A,
+            hex_imm2:    ".FILL xBEEF"  => 0xBEEF,
+            max_hex_imm: ".FILL xFFFF"  => 0xFFFF,
+        }
+
+        macro_rules! single_instruction_multiple_output_tests {
+            ($tests_name:ident
+                $(
+                    $test_name:ident: $instruction:expr => $expected:expr
+                ),+
+                $(,)*
+            ) => {
+                mod $tests_name {
+                    use super::*;
+
+                    $(
+                        #[test]
+                        fn $test_name() {
+                            single_instruction_multiple_output_test($instruction, $expected);
+                        }
+                    )+
+                }
+            };
+        }
+
+        single_instruction_multiple_output_tests! { blkw
+            one: ".BLKW 1"  => &[0,],
+            two: ".BLKW 2"  => &[0, 0,],
+            ten: ".BLKW 10" => &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0,],
+        }
+
+        single_instruction_multiple_output_tests! { stringz
+            a:            ".STRINGZ \"a\""             => &[0x61, 0x00],
+            double_quote: ".STRINGZ \"\\\"\""          => &[0x22, 0x00],
+            backslash:    ".STRINGZ \"\\\\\""          => &[0x5C, 0x00],
+            hello_world:  ".STRINGZ \"Hello, World!\"" => &[0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20, 0x57, 0x6F, 0x72, 0x6C, 0x64, 0x21, 0x00],
+        }
+    }
 }
 
 fn test(input: &str, orig: usize, expected_mem: &[Word]) {
