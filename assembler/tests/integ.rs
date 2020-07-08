@@ -7,21 +7,6 @@ use lc3_assembler::parser::LeniencyLevel::Lenient;
 use std::ops::Index;
 use lc3_isa::util::MemoryDump;
 
-
-#[test]
-fn arithmetic_small() {
-    test(
-        include_str!("inputs/arithmetic_small.asm"),
-        0x3000,
-        &[
-            0x1042,
-            0x5705,
-            0x9DFF,
-            0xF025,
-        ]
-    );
-}
-
 #[test]
 fn load_store_medium() {
     test(
@@ -36,29 +21,6 @@ fn load_store_medium() {
             0xBDFF,
             0x7E3E,
             0xF025,
-        ]
-    );
-}
-
-#[test]
-fn pseudo_ops() {
-    test(
-        include_str!("inputs/pseudo_ops.asm"),
-        0x4000,
-        &[
-            0x0022,
-            0x0074,
-            0x0068,
-            0x0069,
-            0x0073,
-            0x005C,
-            0x0074,
-            0x0068,
-            0x0061,
-            0x0074,
-            0x0022,
-            0x0000,
-            0xBEEF,
         ]
     );
 }
@@ -95,6 +57,14 @@ mod single_instruction {
         };
     }
 
+    single_instruction_tests! { alternative_styles
+        lowercase:       "add r0 r0 r0"   => 0x1000,
+        comma_separated: "add r0, r0, r0" => 0x1000,
+        with_semicolon:  "ADD R0 R0 R0;"  => 0x1000,
+        nonpatt_hex_imm: "ADD R7 R7 0xA"  => 0x1FEA,
+        commented:       "ADD R0 R0 R0 ; comment" => 0x1000,
+    }
+
     single_instruction_tests! { add
         minimal:     "ADD R0 R0 R0"  => 0x1000,
         r1_2_3:      "ADD R1 R2 R3"  => 0x1283,
@@ -103,6 +73,7 @@ mod single_instruction {
         nonzero_imm: "ADD R7 R7 #1"  => 0x1FE1,
         max_imm:     "ADD R7 R7 #15" => 0x1FEF,
         neg_imm:     "ADD R7 R7 #-1" => 0x1FFF,
+        hex_imm:     "ADD R7 R7 xA"  => 0x1FEA,
     }
 
     single_instruction_tests! { and
