@@ -11,6 +11,8 @@ pub mod util;
 pub mod complete;
 pub mod analysis;
 
+pub mod new;
+
 
 #[cfg(test)]
 mod tests {
