@@ -1,9 +1,12 @@
 use chumsky::prelude::*;
+use chumsky::Stream;
+use itertools::Itertools;
 use lc3_isa::{Reg, SignedWord, Word};
 
-pub type Span = std::ops::Range<usize>;
+type Span = std::ops::Range<usize>;
+type Spanned<T> = (T, Span);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum Token {
     Opcode(Opcode),
     Register(Reg),
@@ -17,20 +20,20 @@ enum Token {
     Comment,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum LiteralValue {
     Word(Word),
     SignedWord(SignedWord),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ConditionCodes {
     n: bool,
     z: bool,
     p: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Opcode {
     Add,
     And,
@@ -66,6 +69,8 @@ pub enum Opcode {
     Halt,
 }
 
+// Lexer
+
 fn number_literal_with_base(base: u32, prefix: char) -> impl Parser<char, LiteralValue, Error=Simple<char>> {
     just(prefix)
         .ignore_then(just('-').ignored().or_not())
@@ -94,7 +99,7 @@ fn just_to<O: Clone>(pattern: &'static str, output: O) -> impl Parser<char, O, E
     just(pattern).to(output)
 }
 
-fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error=Simple<char>> {
+fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error=Simple<char>> {
     let newline = text::newline()
         .to(Token::Newline);
 
@@ -236,15 +241,109 @@ fn is_newline(c: &char) -> bool {
      '\u{2029}', ].contains(c) // Paragraph separator
 }
 
+fn lex(source: &str) -> (Option<Vec<Spanned<Token>>>, Vec<Simple<char>>) {
+    lexer().parse_recovery(source.to_uppercase())
+}
+
+
+type WithErrData<T> = Spanned<Result<T, Simple<Token>>>;
+
+// Parser
+#[derive(Debug)]
+struct Program {
+    instructions: Vec<WithErrData<Instruction>>,
+}
+
+#[derive(Debug)]
+struct Instruction {
+    label: Option<WithErrData<String>>,
+    opcode: WithErrData<Opcode>,
+    operands: Vec<WithErrData<Operand>>,
+}
+
+#[derive(Debug)]
+enum Operand {
+    Register(Reg),
+    NumberLiteral(LiteralValue),
+    StringLiteral(String),
+    Label(String),
+}
+
+fn operand() -> impl Parser<Token, Spanned<Operand>, Error = Simple<Token>> {
+    let operand = select! {
+        Token::Register(reg)      => Operand::Register(reg),
+        Token::NumberLiteral(val) => Operand::NumberLiteral(val),
+        Token::StringLiteral(s)   => Operand::StringLiteral(s),
+        Token::Label(s)           => Operand::Label(s),
+    };
+    operand.map_with_span(|o, span| (o, span))
+}
+
+fn instruction() -> impl Parser<Token, Spanned<Instruction>, Error = Simple<Token>> {
+    let label =
+        select! { Token::Label(s) => s }
+        .map_with_span(|s, span| (Ok(s), span))
+        .or_not();
+
+    let opcode =
+        select! { Token::Opcode(o) => o }
+        .map_with_span(|o, span| (Ok(o), span));
+
+    let operands =
+        operand()
+            .map(|(o, span)| (Ok(o), span))
+            .separated_by::<Token, _>(just(Token::Comma));
+
+
+    label
+        .then_ignore(just(Token::Newline).repeated())
+        .then(opcode)
+        .then(operands)
+        .map_with_span(|((l, o), os), span| {
+            let instruction = Instruction {
+                label: l,
+                opcode: o,
+                operands: os,
+            };
+            (instruction, span)
+        })
+}
+
+fn program() -> impl Parser<Token, Spanned<Program>, Error = Simple<Token>> {
+    instruction()
+        .map(|(i, span)| (Ok(i), span))
+        .separated_by(
+            just(Token::Comment).or_not()
+                .then(just(Token::Newline).repeated().at_least(1))
+                .repeated() )
+        .allow_leading()
+        .allow_trailing()
+        .map_with_span(|instructions, span| {
+            (Program { instructions }, span)
+        })
+}
+
+fn parse(src: &str, tokens: Vec<Spanned<Token>>) -> (Option<Spanned<Program>>, Vec<Simple<Token>>) {
+    let len = src.chars().count();
+    program().parse_recovery(Stream::from_iter(len..len + 1, tokens.into_iter()))
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn simple() {
-        let src = ".ORIG x3000;\nLABEL ADD R0, R0, #70000\n.end";
-        let (tokens, errs) = lexer().parse_recovery(src.to_uppercase());
+        let src = ".ORIG x3000;\nLABEL ADD R0, R0, #5000\n.end";
+        let (tokens, lex_errs) = lex(src);
         println!("{:?}", tokens);
-        println!("{:?}", errs);
+        println!("{:?}", lex_errs);
+
+        let parse_results = tokens.map(|ts| parse(src, ts));
+        if let Some((program, parse_errs)) = parse_results {
+            println!("{:?}", program);
+            println!("{:?}", parse_errs);
+        }
     }
 }
