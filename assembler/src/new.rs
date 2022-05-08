@@ -246,9 +246,10 @@ fn lex(source: &str) -> (Option<Vec<Spanned<Token>>>, Vec<Simple<char>>) {
 }
 
 
+// Parser
+
 type WithErrData<T> = Spanned<Result<T, Simple<Token>>>;
 
-// Parser
 #[derive(Debug)]
 struct Program {
     instructions: Vec<WithErrData<Instruction>>,
@@ -258,7 +259,7 @@ struct Program {
 struct Instruction {
     label: Option<WithErrData<String>>,
     opcode: WithErrData<Opcode>,
-    operands: Vec<WithErrData<Operand>>,
+    operands: WithErrData<Vec<WithErrData<Operand>>>,
 }
 
 #[derive(Debug)]
@@ -279,25 +280,63 @@ fn operand() -> impl Parser<Token, Spanned<Operand>, Error = Simple<Token>> {
     operand.map_with_span(|o, span| (o, span))
 }
 
-fn instruction() -> impl Parser<Token, Spanned<Instruction>, Error = Simple<Token>> {
+fn any_opcode_but(denied: Opcode) -> impl Parser<Token, Spanned<Opcode>, Error = Simple<Token>> {
+    filter_map(move |span, t: Token|
+        if let Token::Opcode(o) = t.clone() {
+            if o == denied {
+                Err(Simple::expected_input_found(span, None, Some(t))) // TODO: improve error, expected
+            } else {
+                Ok(o)
+            }
+        } else {
+            Err(Simple::expected_input_found(span, None, Some(t))) // TODO: improve error, expected
+        })
+        .map_with_span(|o, span| (o, span))
+}
+
+fn opcode(expected: Opcode) -> impl Parser<Token, Spanned<Opcode>, Error = Simple<Token>> {
+    let expected_token = Token::Opcode(expected);
+    filter_map(move |span, t|
+        if t == expected_token {
+            if let Token::Opcode(o) = t {
+                Ok(o)
+            } else { unreachable!() }
+        } else {
+            Err(Simple::expected_input_found(span, [Some(expected_token.clone())], Some(t)))
+        })
+        .map_with_span(|o, span| (o, span))
+}
+
+enum OpcodeFilter {
+    OnlyOrig,
+    AnyButEnd,
+    OnlyEnd,
+}
+
+fn instruction(oc_filter: OpcodeFilter) -> impl Parser<Token, Spanned<Instruction>, Error = Simple<Token>> {
     let label =
         select! { Token::Label(s) => s }
         .map_with_span(|s, span| (Ok(s), span))
         .or_not();
 
-    let opcode =
-        select! { Token::Opcode(o) => o }
-        .map_with_span(|o, span| (Ok(o), span));
+    use OpcodeFilter::*;
+    let oc: Box<dyn Parser<Token, Spanned<Opcode>, Error = Simple<Token>>> =
+        match oc_filter {
+            OnlyOrig  => Box::new(opcode(Opcode::Orig)),
+            AnyButEnd => Box::new(any_opcode_but(Opcode::End)),
+            OnlyEnd   => Box::new(opcode(Opcode::End)),
+        };
+    let oc_with_err_data = oc.map(|(oc, span)| (Ok(oc), span));
 
     let operands =
         operand()
             .map(|(o, span)| (Ok(o), span))
-            .separated_by::<Token, _>(just(Token::Comma));
-
+            .separated_by::<Token, _>(just(Token::Comma))
+            .map_with_span(|os, span| (Ok(os), span));
 
     label
         .then_ignore(just(Token::Newline).repeated())
-        .then(opcode)
+        .then(oc_with_err_data)
         .then(operands)
         .map_with_span(|((l, o), os), span| {
             let instruction = Instruction {
@@ -309,23 +348,43 @@ fn instruction() -> impl Parser<Token, Spanned<Instruction>, Error = Simple<Toke
         })
 }
 
+fn comments_and_newlines() -> impl Parser<Token, (), Error = Simple<Token>> {
+    just(Token::Comment).or_not()
+        .then(just(Token::Newline).repeated().at_least(1))
+        .repeated()
+        .ignored()
+}
+
 fn program() -> impl Parser<Token, Spanned<Program>, Error = Simple<Token>> {
-    instruction()
-        .map(|(i, span)| (Ok(i), span))
-        .separated_by(
-            just(Token::Comment).or_not()
-                .then(just(Token::Newline).repeated().at_least(1))
-                .repeated() )
-        .allow_leading()
-        .allow_trailing()
-        .map_with_span(|instructions, span| {
+    comments_and_newlines()
+        .ignore_then(instruction(OpcodeFilter::OnlyOrig))
+        .then(
+            instruction(OpcodeFilter::AnyButEnd)
+                .map(|(i, span)| (Ok(i), span))
+                .separated_by(comments_and_newlines())
+                .allow_leading()
+                .allow_trailing()
+                )
+        .then(instruction(OpcodeFilter::OnlyEnd))
+        .then_ignore(comments_and_newlines())
+        .then_ignore(end())
+        .map_with_span(|((orig, instructions), end), span| {
             (Program { instructions }, span)
         })
 }
 
+fn file() -> impl Parser<Token, Spanned<Vec<WithErrData<Program>>>, Error = Simple<Token>> {
+    program()
+        .map(|(p, span)| (Ok(p), span))
+        .separated_by(comments_and_newlines())
+        .allow_leading()
+        .allow_trailing()
+        .map_with_span(|programs, span| (programs, span))
+}
+
 fn parse(src: &str, tokens: Vec<Spanned<Token>>) -> (Option<Spanned<Program>>, Vec<Simple<Token>>) {
     let len = src.chars().count();
-    program().parse_recovery(Stream::from_iter(len..len + 1, tokens.into_iter()))
+    program().parse_recovery_verbose(Stream::from_iter(len..len + 1, tokens.into_iter()))
 }
 
 
@@ -335,7 +394,7 @@ mod tests {
 
     #[test]
     fn simple() {
-        let src = ".ORIG x3000;\nLABEL ADD R0, R0, #5000\n.end";
+        let src = ".ORIG x3000;\nLABEL ADD R0, R0, #7000\n.end";
         let (tokens, lex_errs) = lex(src);
         println!("{:?}", tokens);
         println!("{:?}", lex_errs);
