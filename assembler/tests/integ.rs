@@ -2,8 +2,7 @@ extern crate lc3_assembler;
 
 use lc3_assembler::lexer::Lexer;
 use lc3_assembler::parser::parse;
-use lc3_isa::Word;
-use lc3_assembler::parser::LeniencyLevel::Lenient;
+use lc3_isa::{ADDR_MAX_VAL, Word};
 use std::ops::Index;
 use lc3_isa::util::MemoryDump;
 
@@ -266,17 +265,27 @@ mod single_instruction {
 }
 
 fn test(input: &str, orig: usize, expected_mem: &[Word]) {
-    let lexer = Lexer::new(input);
-    let cst = parse(lexer, Lenient);
+    use lc3_assembler::new::*;
 
-    let mem = cst.assemble(None);
+    let (maybe_tokens, lex_errs) = lexer::lex(input, LeniencyLevel::Lenient);
+    let tokens = maybe_tokens.expect("lexing failed");
+    println!("{:?}", tokens);
+
+    let (maybe_file, parse_errs) = parser::parse(input, tokens, LeniencyLevel::Lenient);
+    let (mut file, span) = maybe_file.expect("parsing failed");
+    assert_eq!(1, file.len(), "parsed unexpected number of programs: {}", file.len());
+    let program = file.remove(0).0.expect("parse error in program");
+    let object = assembler::assemble(program);
+
+    let mem = linker::link([object]);
+
     for i in 0..orig {
         assert_mem(&mem, i, 0x0000);
     }
     for i in 0..expected_mem.len() {
         assert_mem(&mem, orig + i, expected_mem[i]);
     }
-    for i in (orig + expected_mem.len())..0xFFFF {
+    for i in (orig + expected_mem.len())..(ADDR_MAX_VAL as usize) {
         assert_mem(&mem, i, 0x0000);
     }
 }
