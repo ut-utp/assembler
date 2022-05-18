@@ -45,16 +45,17 @@ fn as_() {
 
         let (maybe_file, parse_errs) = parse(src, tokens, leniency);
         let (mut file, span) = maybe_file.expect("parsing failed");
-        assert_eq!(1, file.len(), "parsed unexpected number of programs: {}", file.len());
-        let program = file.remove(0).0.expect("parse error in program");
 
         if matches.is_present("check") {
             println!("{}: No errors found.", path_str);
         } else {
             let background = if matches.is_present("with_os") { Some(lc3_os::OS_IMAGE.clone()) } else { None };
 
-            let object = assemble(program);
-            let mem = link([object], background);
+            let objects =
+                file.into_iter()
+                    .map(|program| assemble(program.0.unwrap()));
+            
+            let mem = link(objects, background);
 
             let mut output_path = PathBuf::from(path_str);
             output_path.set_extension(MEM_DUMP_FILE_EXTENSION);
