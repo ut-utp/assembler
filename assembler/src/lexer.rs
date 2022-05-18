@@ -20,6 +20,8 @@ pub enum Token {
     Comma,
 
     Comment,
+
+    Error,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -288,7 +290,7 @@ fn tokens(leniency: LeniencyLevel) -> impl Parser<char, Vec<Spanned<Token>>, Err
         comma,
         comment(),
     ))
-        .recover_with(skip_then_retry_until([])); // TODO: improve?
+        .recover_with(skip_until([',', ';', ' ', '\t', '\n', '\r', '\x0B', '\x0C', '\u{0085}', '\u{2028}', '\u{2029}'], |_| Token::Error)); // TODO: improve?
 
     token
         .map_with_span(|token, span| (token, span))
@@ -376,4 +378,41 @@ pub fn lex(source: &str, leniency: LeniencyLevel) -> (Option<Vec<Spanned<Token>>
             None
         };
     (tokens, errors)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use Token::*;
+    use Reg::*;
+    use crate::lexer::Opcode::*;
+
+    #[test]
+    fn lone_error() {
+        let source = "#OOPS";
+        let (tokens, _) = lex(source, LeniencyLevel::Lenient);
+        assert_eq!(
+            Some(vec![
+                (Error, 0..5),
+            ]),
+            tokens);
+    }
+
+    #[test]
+    fn error_in_context() {
+        let source = "ADD R0, R0, #OOPS; <- error";
+        let (tokens, _) = lex(source, LeniencyLevel::Lenient);
+        assert_eq!(
+            Some(vec![
+                (Opcode(Add),   0.. 3),
+                (Register(R0),  4.. 6),
+                (Comma,         6.. 7),
+                (Register(R0),  8..10),
+                (Comma,        10..11),
+                (Error,        12..17),
+                (Comment,      17..27),
+            ]),
+            tokens);
+    }
 }
