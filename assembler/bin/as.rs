@@ -54,7 +54,7 @@ fn as_() {
             let objects =
                 file.into_iter()
                     .map(|program| assemble(program.0.unwrap()));
-            
+
             let mem = link(objects, background);
 
             let mut output_path = PathBuf::from(path_str);

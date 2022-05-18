@@ -174,6 +174,16 @@ fn tokens(leniency: LeniencyLevel) -> impl Parser<char, Vec<Spanned<Token>>, Err
     let newline = text::newline()
         .to(Token::Newline);
 
+    let comma = just(',')
+        .to(Token::Comma);
+
+    let non_newline_whitespace =
+        filter(|c: &char| c.is_whitespace() && !is_newline(c)).repeated();
+
+    let terminator =
+        filter(|c: &char| c.is_whitespace() || *c == ',' || *c == ';').ignored()
+            .or(end().ignored());
+
     use Opcode::*;
     let branch_opcode =
         just("BR")
@@ -229,6 +239,7 @@ fn tokens(leniency: LeniencyLevel) -> impl Parser<char, Vec<Spanned<Token>>, Err
             one_opcode(".STRINGZ", Stringz),
             one_opcode(".END", End),
         )))
+        .then_ignore(terminator.clone().rewind())
         .map(Token::Opcode);
 
     use Reg::*;
@@ -242,6 +253,7 @@ fn tokens(leniency: LeniencyLevel) -> impl Parser<char, Vec<Spanned<Token>>, Err
         one_register("R6", R6),
         one_register("R7", R7),
     ))
+        .then_ignore(terminator.clone().rewind())
         .map(Token::Register);
 
     let unqualified_number_literal_base = 10;
@@ -250,6 +262,7 @@ fn tokens(leniency: LeniencyLevel) -> impl Parser<char, Vec<Spanned<Token>>, Err
             Word::from_str_radix(&digits, unqualified_number_literal_base)
                 .map_err(|e| Simple::custom(span, e.to_string())) // TODO: parse error should only be on overflow or underflow
         })
+        .then_ignore(terminator.clone().rewind())
         .map(Token::UnqualifiedNumberLiteral);
 
     let number_literal = choice((
@@ -257,13 +270,12 @@ fn tokens(leniency: LeniencyLevel) -> impl Parser<char, Vec<Spanned<Token>>, Err
         number_literal_with_base(10, '#', leniency),
         number_literal_with_base(16, 'X', leniency),
     ))
+        .then_ignore(terminator.clone().rewind())
         .map(Token::NumberLiteral);
 
     let label = text::ident() // C-style identifier. Follows all LC-3 label rules but allows arbitrary length and underscores.
+        .then_ignore(terminator.rewind())
         .map(Token::Label); // TODO: validate length, underscores in strict mode
-
-    let comma = just(',')
-        .to(Token::Comma);
 
     let token = choice((
         opcode,
@@ -277,9 +289,6 @@ fn tokens(leniency: LeniencyLevel) -> impl Parser<char, Vec<Spanned<Token>>, Err
         comment(),
     ))
         .recover_with(skip_then_retry_until([])); // TODO: improve?
-
-    let non_newline_whitespace =
-        filter(|c: &char| c.is_whitespace() && !is_newline(c)).repeated();
 
     token
         .map_with_span(|token, span| (token, span))
