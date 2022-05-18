@@ -1,10 +1,9 @@
 extern crate lc3_assembler;
 
-use lc3_assembler::lexer::Lexer;
-use lc3_assembler::parser::parse;
 use lc3_isa::{ADDR_MAX_VAL, Word};
 use std::ops::Index;
 use lc3_isa::util::MemoryDump;
+use lc3_assembler::{assembler, lexer, linker, parser, LeniencyLevel};
 
 #[test]
 fn load_store_medium() {
@@ -265,11 +264,8 @@ mod single_instruction {
 }
 
 fn test(input: &str, orig: usize, expected_mem: &[Word]) {
-    use lc3_assembler::new::*;
-
     let (maybe_tokens, lex_errs) = lexer::lex(input, LeniencyLevel::Lenient);
     let tokens = maybe_tokens.expect("lexing failed");
-    println!("{:?}", tokens);
 
     let (maybe_file, parse_errs) = parser::parse(input, tokens, LeniencyLevel::Lenient);
     let (mut file, span) = maybe_file.expect("parsing failed");

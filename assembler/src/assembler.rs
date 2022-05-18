@@ -3,10 +3,10 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
 use std::num::{ParseIntError, TryFromIntError};
 use lc3_isa::{Addr, Reg, SignedWord, Word};
-use crate::new::lexer::{ConditionCodes, LiteralValue, Opcode};
-use crate::new::parser::Operand;
-use super::parser;
-use super::parser::{Program, WithErrData};
+use crate::lexer::{ConditionCodes, LiteralValue, Opcode};
+use crate::parser::Operand;
+use crate::parser;
+use crate::parser::{Program, WithErrData};
 
 pub(crate) type SymbolTable = HashMap<String, Addr>;
 

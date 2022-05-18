@@ -3,8 +3,7 @@ use chumsky::chain::Chain;
 use chumsky::Parser;
 use lc3_isa::util::MemoryDump;
 use lc3_isa::{Addr, ADDR_SPACE_SIZE_IN_WORDS, Word};
-use crate::new::assembler::try_assemble;
-use super::assembler::{SymbolTable, Object, ObjectWord, AssemblyResult};
+use crate::assembler::{try_assemble, SymbolTable, Object, ObjectWord, AssemblyResult};
 
 struct LinkedObject {
     origin: Addr,

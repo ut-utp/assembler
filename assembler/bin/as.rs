@@ -2,14 +2,13 @@ extern crate lc3_assembler;
 
 use std::{env, fs};
 use std::path::{Path, PathBuf};
-use lc3_assembler::lexer::Lexer;
 use lc3_assembler::parser::parse;
 use lc3_shims::memory::FileBackedMemoryShim;
 use clap::clap_app;
-use lc3_assembler::parser::LeniencyLevel::*;
-use lc3_assembler::analysis::extract_errors::extract_errors;
-use annotate_snippets::display_list::{DisplayList, FormatOptions};
-use annotate_snippets::snippet::{Snippet, Annotation, Slice, AnnotationType, SourceAnnotation};
+use lc3_assembler::assembler::assemble;
+use lc3_assembler::LeniencyLevel;
+use lc3_assembler::lexer::lex;
+use lc3_assembler::linker::link;
 
 const MEM_DUMP_FILE_EXTENSION: &'static str = "mem";
 
@@ -36,34 +35,26 @@ fn as_() {
         let path = Path::new(path_str);
         assert!(path.is_file());
 
-        let leniency = if matches.is_present("strict") { Strict } else { Lenient };
+        let leniency = if matches.is_present("strict") { LeniencyLevel::Strict } else { LeniencyLevel::Lenient };
 
         let string = fs::read_to_string(path).unwrap();
         let src = string.as_str();
-        let lexer = Lexer::new(src);
-        let program = parse(lexer, leniency);
 
-        let errors = extract_errors(&program);
-        if errors.len() > 0 {
-            for error in errors {
-                if error.should_show() {
-                    let label_string = error.message();
-                    let label = label_string.as_str();
-                    let annotations = error.annotations();
-                    let slices = slices(annotations, src, Some(path_str));
-                    let snippet = create_snippet(label, slices);
-                    let dl = DisplayList::from(snippet);
-                    println!("{}", dl);
-                }
-            }
-            break;
-        }
+        let (maybe_tokens, lex_errs) = lex(src, leniency);
+        let tokens = maybe_tokens.expect("lexing failed");
+
+        let (maybe_file, parse_errs) = parse(src, tokens, leniency);
+        let (mut file, span) = maybe_file.expect("parsing failed");
+        assert_eq!(1, file.len(), "parsed unexpected number of programs: {}", file.len());
+        let program = file.remove(0).0.expect("parse error in program");
 
         if matches.is_present("check") {
             println!("{}: No errors found.", path_str);
         } else {
             let background = if matches.is_present("with_os") { Some(lc3_os::OS_IMAGE.clone()) } else { None };
-            let mem = program.assemble(background);
+
+            let object = assemble(program);
+            let mem = link([object]);
 
             let mut output_path = PathBuf::from(path_str);
             output_path.set_extension(MEM_DUMP_FILE_EXTENSION);
@@ -71,33 +62,4 @@ fn as_() {
             file_backed_mem.flush_all_changes().unwrap();
         }
     }
-}
-
-fn create_snippet<'input>(label: &'input str, slices: Vec<Slice<'input>>) -> Snippet<'input> {
-    Snippet {
-        title: Some(Annotation {
-            label: Some(label),
-            id: None,
-            annotation_type: AnnotationType::Error
-        }),
-        footer: vec![],
-        slices,
-        opt: FormatOptions { color: true, anonymized_line_numbers: false }
-    }
-}
-
-pub fn slices<'input>(annotations: Vec<SourceAnnotation<'input>>, source: &'input str, origin: Option<&'input str>) -> Vec<Slice<'input>> {
-    let mut slices = Vec::new();
-    if !annotations.is_empty() {
-        slices.push(
-            Slice {
-                source,
-                origin,
-                line_start: 1,
-                fold: true,
-                annotations,
-            }
-        );
-    }
-    slices
 }
