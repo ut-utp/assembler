@@ -54,7 +54,7 @@ fn link_object(symbol_table: &SymbolTable, object: Object) -> LinkedObject {
     LinkedObject { origin, words }
 }
 
-pub fn link(objects: impl IntoIterator<Item=Object>) -> MemoryDump {
+pub fn link(objects: impl IntoIterator<Item=Object>, background: Option<MemoryDump>) -> MemoryDump {
     let objects = objects.into_iter().collect::<Vec<_>>();
 
     let mut symbol_table = HashMap::new();
@@ -64,7 +64,11 @@ pub fn link(objects: impl IntoIterator<Item=Object>) -> MemoryDump {
         }
     }
 
-    let mut image = [0; ADDR_SPACE_SIZE_IN_WORDS];
+    let mut image =
+        match background {
+            Some(mem) => mem.0,
+            None => [0; ADDR_SPACE_SIZE_IN_WORDS]
+        };
     for object in objects {
         let linked_object = link_object(&symbol_table, object);
         layer_object(&mut image, linked_object);

@@ -273,7 +273,7 @@ fn test(input: &str, orig: usize, expected_mem: &[Word]) {
     let program = file.remove(0).0.expect("parse error in program");
     let object = assembler::assemble(program);
 
-    let mem = linker::link([object]);
+    let mem = linker::link([object], None);
 
     for i in 0..orig {
         assert_mem(&mem, i, 0x0000);

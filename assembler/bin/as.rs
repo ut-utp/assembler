@@ -54,7 +54,7 @@ fn as_() {
             let background = if matches.is_present("with_os") { Some(lc3_os::OS_IMAGE.clone()) } else { None };
 
             let object = assemble(program);
-            let mem = link([object]);
+            let mem = link([object], background);
 
             let mut output_path = PathBuf::from(path_str);
             output_path.set_extension(MEM_DUMP_FILE_EXTENSION);
