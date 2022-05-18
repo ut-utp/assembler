@@ -63,6 +63,12 @@ mod single_instruction {
         commented:       "ADD R0 R0 R0 ; comment" => 0x1000,
     }
 
+    single_instruction_tests! { labels
+        minimal:            "A     ADD R0 R0 R0" => 0x1000,
+        begins_with_opcode: "ADDER ADD R0 R0 R0" => 0x1000,
+        begins_with_trap:   "INIT  ADD R0 R0 R0" => 0x1000,
+    }
+
     single_instruction_tests! { add
         minimal:     "ADD R0 R0 R0"  => 0x1000,
         r1_2_3:      "ADD R1 R2 R3"  => 0x1283,
