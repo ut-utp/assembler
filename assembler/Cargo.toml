@@ -39,6 +39,7 @@ num-traits = "0.2.11"
 annotate-snippets = { version = "0.8.0", features = ["color"] }
 clap = "2.33.0"
 chumsky = "0.8.0"
+ariadne = "0.1.5"
 
 lc3-isa = { git = "https://github.com/ut-utp/core", branch = "master", version = "0.1.0", default-features = false }
 lc3-shims = { git = "https://github.com/ut-utp/core", branch = "master", version = "0.1.0", default-features = false }

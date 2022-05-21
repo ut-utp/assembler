@@ -1,5 +1,8 @@
+use std::fmt::{Display, format, Formatter};
 use std::ops::Range;
+use std::string::String;
 use itertools::zip;
+use ariadne::{Label, Report, ReportBuilder, ReportKind};
 use crate::lexer::Opcode;
 use crate::parser::{File, Instruction, Operand, Program, WithErrData};
 use crate::Spanned;
@@ -7,7 +10,7 @@ use crate::Spanned;
 type ErrorList = Vec<Spanned<Error>>;
 
 use Error::*;
-enum Error {
+pub enum Error {
     BadProgram,
     BadInstruction,
     BadLabel,
@@ -18,14 +21,52 @@ enum Error {
     OperandTypeMismatch { expected: OperandType, actual: OperandType }
 }
 
+impl Error {
+    fn message(&self) -> String {
+        match self {
+            BadProgram     => String::from("invalid program"),
+            BadInstruction => String::from("invalid instruction"),
+            BadLabel       => String::from("invalid label"),
+            BadOpcode      => String::from("invalid opcode"),
+            BadOperands    => String::from("invalid operand list"),
+            BadOperand     => String::from("invalid operand"),
+            WrongNumberOfOperands { expected, actual } =>
+                format!("wrong number of operands; expected {}, found: {}", expected, actual),
+            OperandTypeMismatch { expected, actual } =>
+                format!("wrong operand type; expected {}, found: {}", expected, actual),
+        }
+    }
+}
+
+pub fn report(spanned_error: Spanned<Error>) -> Report {
+    let (error, span) = spanned_error;
+    Report::build(ReportKind::Error, (), 0)
+        .with_message(error.message())
+        .with_label(Label::new(span).with_message("here"))
+        .finish()
+}
+
 use OperandType::*;
-enum OperandType {
+pub enum OperandType {
     Register,
     UnqualifiedNumber,
     Number,
     String,
     Label,
     Or(Box<OperandType>, Box<OperandType>)
+}
+
+impl Display for OperandType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Register          => write!(f, "Register"),
+            UnqualifiedNumber => write!(f, "Unqualified Number"),
+            Number            => write!(f, "Number"),
+            String            => write!(f, "String"),
+            Label             => write!(f, "Label"),
+            Or(t1, t2)        => write!(f, "{} or {}", t1, t2),
+        }
+    }
 }
 
 impl OperandType {
@@ -67,7 +108,7 @@ fn check_result_then<T>(errors: &mut ErrorList, wed: &WithErrData<T>, error: Err
     }
 }
 
-fn validate(file: &File) -> ErrorList {
+pub fn validate(file: &File) -> ErrorList {
     let mut errors = Vec::new();
     for program in file {
         validate_program(&mut errors, program);
