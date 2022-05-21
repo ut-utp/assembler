@@ -13,7 +13,7 @@ pub(crate) type WithErrData<T> = Spanned<Result<T, ()>>;
 pub struct Program {
     pub(crate) orig: WithErrData<Instruction>,
     pub(crate) instructions: Vec<WithErrData<Instruction>>,
-    end: WithErrData<Instruction>,
+    pub(crate) end: WithErrData<Instruction>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -200,7 +200,7 @@ fn program(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<Program>, Erro
         })
 }
 
-type File = Vec<WithErrData<Program>>;
+pub(crate) type File = Vec<WithErrData<Program>>;
 
 fn file(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<Vec<WithErrData<Program>>>, Error = Simple<Token>> {
     program(leniency)

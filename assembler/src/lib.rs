@@ -9,6 +9,7 @@ pub mod lexer;
 pub mod parser;
 pub mod assembler;
 pub mod linker;
+pub mod analysis;
 
 type Span = std::ops::Range<usize>;
 type Spanned<T> = (T, Span);
