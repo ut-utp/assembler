@@ -37,14 +37,12 @@ regex = "0.2.1"
 itertools = "0.8.2"
 num-traits = "0.2.11"
 annotate-snippets = { version = "0.8.0", features = ["color"] }
-clap = "2.33.0"
+clap = { version = "3.1.18", features = ["derive"] }
 chumsky = "0.8.0"
 ariadne = "0.1.5"
+quote = "1.0.18"
 
 lc3-isa = { git = "https://github.com/ut-utp/core", branch = "master", version = "0.1.0", default-features = false }
 lc3-shims = { git = "https://github.com/ut-utp/core", branch = "master", version = "0.1.0", default-features = false }
 lc3-os = { git = "https://github.com/ut-utp/core", branch = "master", version = "0.1.0", default-features = false }
 # TODO: ^ eventually don't pull these from git
-
-[dev-dependencies]
-pretty_assertions = "0.6.1"
