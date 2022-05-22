@@ -3,7 +3,8 @@ use std::ops::Range;
 use std::string::String;
 use itertools::zip;
 use ariadne::{Label, Report, ReportBuilder, ReportKind};
-use crate::lexer::Opcode;
+use lc3_isa::{SignedWord, Word};
+use crate::lexer::{LiteralValue, Opcode};
 use crate::parser::{File, Instruction, Operand, Program, WithErrData};
 use crate::Spanned;
 
@@ -50,7 +51,7 @@ use OperandType::*;
 pub enum OperandType {
     Register,
     UnqualifiedNumber,
-    Number,
+    Number { signed: bool, width: u8 },
     String,
     Label,
     Or(Box<OperandType>, Box<OperandType>)
@@ -59,33 +60,89 @@ pub enum OperandType {
 impl Display for OperandType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Register          => write!(f, "Register"),
-            UnqualifiedNumber => write!(f, "Unqualified Number"),
-            Number            => write!(f, "Number"),
-            String            => write!(f, "String"),
-            Label             => write!(f, "Label"),
-            Or(t1, t2)        => write!(f, "{} or {}", t1, t2),
+            Register                 => write!(f, "Register"),
+            UnqualifiedNumber        => write!(f, "Unqualified Number"),
+            Number { signed, width } => write!(f, "Number ({}-bit, {})", width, (if *signed { "signed" } else { "unsigned" })),
+            String                   => write!(f, "String"),
+            Label                    => write!(f, "Label"),
+            Or(t1, t2)               => write!(f, "{} or {}", t1, t2),
+        }
+    }
+}
+
+pub(crate) enum AcceptedNumberSigns {
+    Signed,
+    Unsigned,
+    None,
+    Any
+}
+
+impl AcceptedNumberSigns {
+    pub(crate) fn or(&self, other: &Self) -> Self {
+        use AcceptedNumberSigns::*;
+        match (self, other) {
+            (Unsigned, Signed)
+            | (Signed, Unsigned)
+            | (Any, _)
+            | (_, Any)           => Any,
+            (Signed, _)
+            | (_, Signed)        => Signed,
+            (Unsigned, _)
+            | (_, Unsigned)      => Unsigned,
+            (None, None)         => None
         }
     }
 }
 
 impl OperandType {
-    pub(crate) fn reg_or_imm() -> Self {
-        Or(Box::new(Register), Box::new(Number))
+    pub(crate) fn accepted_number_signs(&self) -> AcceptedNumberSigns {
+        use AcceptedNumberSigns::*;
+
+        match self {
+            Number { signed, .. } => if *signed { Signed } else { Unsigned },
+            Or(t1, t2) => t1.accepted_number_signs().or(&t2.accepted_number_signs()),
+            _ => None
+        }
+    }
+    pub(crate) fn signed_or_unsigned_number(width: u8) -> Self {
+        Or(Box::new(Number { signed: false, width }),
+           Box::new(Number { signed: true,  width }))
     }
 
-    pub(crate) fn pc_offset() -> Self {
-        Or(Box::new(Label), Box::new(Number))
+    pub(crate) fn reg_or_imm5() -> Self {
+        Or(Box::new(Register), Box::new(Number { signed: true, width: 5 }))
+    }
+
+    pub(crate) fn pc_offset(width: u8) -> Self {
+        Or(Box::new(Label), Box::new(Number { signed: true, width }))
     }
 
     pub(crate) fn check(&self, operand: &Operand) -> bool {
         match self {
-            Register          => matches!(operand, Operand::Register(_)),
-            UnqualifiedNumber => matches!(operand, Operand::UnqualifiedNumberLiteral(_)),
-            Number            => matches!(operand, Operand::NumberLiteral(_)),
-            String            => matches!(operand, Operand::StringLiteral(_)),
-            Label             => matches!(operand, Operand::Label(_)),
-            Or(t1, t2)        => t1.check(operand) || t2.check(operand),
+            Register                 => matches!(operand, Operand::Register(_)),
+            UnqualifiedNumber        => matches!(operand, Operand::UnqualifiedNumberLiteral(_)),
+            Number { signed: expected_signed, width: expected_width } => {
+                if let Number { signed, width } = OperandType::of(operand) {
+                    match (signed, expected_signed) {
+                        (true, false) => {
+                            if let Operand::NumberLiteral(LiteralValue::SignedWord(sw)) = operand {
+                                *sw >= 0 && (width - 1) <= *expected_width
+                            } else {
+                                // TODO: find way to couple OperandType::of and value extraction to avoid this case
+                                unreachable!("Detected operand as signed type but could not extract signed value");
+                            }
+                        }
+                        (false, true) => width <= (expected_width - 1),
+                        _ => width <= *expected_width
+                    }
+
+                } else {
+                    false
+                }
+            }
+            String                   => matches!(operand, Operand::StringLiteral(_)),
+            Label                    => matches!(operand, Operand::Label(_)),
+            Or(t1, t2)               => t1.check(operand) || t2.check(operand),
         }
     }
 
@@ -93,11 +150,51 @@ impl OperandType {
         match operand {
             Operand::Register(_)                 => Register,
             Operand::UnqualifiedNumberLiteral(_) => UnqualifiedNumber,
-            Operand::NumberLiteral(_)            => Number,
+            Operand::NumberLiteral(lv)           => OperandType::of_number_literal(lv, None),
             Operand::StringLiteral(_)            => String,
             Operand::Label(_)                    => Label,
         }
     }
+
+    pub(crate) fn of_number_literal(literal_value: &LiteralValue, interpret_as: Option<AcceptedNumberSigns>) -> Self {
+        use AcceptedNumberSigns::*;
+
+        let value =
+            match literal_value {
+                LiteralValue::Word(value)       => *value as i32,
+                LiteralValue::SignedWord(value) => *value as i32,
+            };
+        let unsigned_interpretation = Number { signed: false, width: min_unsigned_width(value) };
+        let signed_interpretation   = Number { signed: true,  width: min_signed_width(value)   };
+        match interpret_as {
+            Option::None | Some(None) => match literal_value {
+                LiteralValue::Word(_)       => unsigned_interpretation,
+                LiteralValue::SignedWord(_) => signed_interpretation,
+            }
+            Some(Signed)   => signed_interpretation,
+            Some(Unsigned) => unsigned_interpretation,
+            Some(Any)      => Or(Box::new(signed_interpretation),
+                                 Box::new(unsigned_interpretation)),
+        }
+    }
+}
+
+fn min_signed_width(n: i32) -> u8 {
+    let mut width = 1;
+    const BASE: i32 = 2;
+    while n < -BASE.pow(width - 1) || n >= BASE.pow(width - 1) {
+        width += 1;
+    }
+    width as u8
+}
+
+fn min_unsigned_width(n: i32) -> u8 {
+    let mut width = 1;
+    const BASE: i32 = 2;
+    while n >= BASE.pow(width) {
+        width += 1;
+    }
+    width as u8
 }
 
 fn check_result_then<T>(errors: &mut ErrorList, wed: &WithErrData<T>, error: Error, f: impl FnOnce(&mut ErrorList, &T, &Range<usize>)) {
@@ -144,21 +241,24 @@ fn validate_instruction(errors: &mut ErrorList, instruction: &WithErrData<Instru
         let expected_operands = match oc_res {
             Err(_) => None,
             Ok(oc) => Some(match oc {
-                Add | And      => vec![Register, Register, OperandType::reg_or_imm()],
-                Br(_) | Jsr    => vec![OperandType::pc_offset()],
+                Add | And      => vec![Register, Register, OperandType::reg_or_imm5()],
+                Br(_)          => vec![OperandType::pc_offset(9)],
+                Jsr            => vec![OperandType::pc_offset(11)],
                 Jmp | Jsrr     => vec![Register],
                 Ld | Ldi | Lea
-                | St | Sti     => vec![Register, OperandType::pc_offset()],
-                Ldr | Str      => vec![Register, Register, Number],
+                | St | Sti     => vec![Register, OperandType::pc_offset(9)],
+                Ldr | Str      => vec![Register, Register, Number { signed: true, width: 6 }],
                 Not            => vec![Register, Register],
                 Ret | Rti
                 | Getc | Out
                 | Puts | In
                 | Putsp | Halt
                 | End          => vec![],
-                Trap
-                | Orig | Blkw  => vec![Number],
-                Fill           => vec![Or(Box::new(Label), Box::new(Number))],
+                Trap           => vec![OperandType::signed_or_unsigned_number(8)],
+                Orig           => vec![OperandType::signed_or_unsigned_number(16)], // TODO: Disallow signed?
+                Blkw           => vec![UnqualifiedNumber],
+                Fill           => vec![Or(Box::new(Label),
+                                          Box::new(OperandType::signed_or_unsigned_number(16)))],
                 Stringz        => vec![String],
             }),
         };
@@ -180,7 +280,12 @@ fn validate_operands(errors: &mut ErrorList, operands: &WithErrData<Vec<WithErrD
                         Err(_) => { es.push((BadOperand, op_span.clone())) }
                         Ok(op) => {
                             if !exp_ty.check(op) {
-                                es.push((OperandTypeMismatch { expected: exp_ty, actual: OperandType::of(op) }, op_span.clone()));
+                                let actual = if let Operand::NumberLiteral(value) = op {
+                                    OperandType::of_number_literal(value, Some(exp_ty.accepted_number_signs()))
+                                } else {
+                                    OperandType::of(op)
+                                };
+                                es.push((OperandTypeMismatch { expected: exp_ty, actual }, op_span.clone()));
                             }
                         }
                     }
