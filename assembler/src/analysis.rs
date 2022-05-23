@@ -1,12 +1,11 @@
 use std::fmt::{Display, format, Formatter};
-use std::ops::Range;
 use std::string::String;
 use itertools::zip;
 use ariadne::{Label, Report, ReportBuilder, ReportKind};
 use lc3_isa::{SignedWord, Word};
 use crate::lexer::{LiteralValue, Opcode};
 use crate::parser::{File, Instruction, Operand, Program, WithErrData};
-use crate::Spanned;
+use crate::{Span, Spanned};
 
 type ErrorList = Vec<Spanned<Error>>;
 
@@ -48,6 +47,7 @@ pub fn report(spanned_error: Spanned<Error>) -> Report {
 }
 
 use OperandType::*;
+#[derive(Clone)]
 pub enum OperandType {
     Register,
     UnqualifiedNumber,
@@ -197,100 +197,207 @@ fn min_unsigned_width(n: i32) -> u8 {
     width as u8
 }
 
-fn check_result_then<T>(errors: &mut ErrorList, wed: &WithErrData<T>, error: Error, f: impl FnOnce(&mut ErrorList, &T, &Range<usize>)) {
-    let (res, span) = wed;
-    match res {
-        Err(_) => { errors.push((error, span.clone())); }
-        Ok(v) => { f(errors, v, span); }
+use Analysis::*;
+enum Analysis {
+    OperandTypes { expected_operands: Option<Vec<OperandType>> },
+}
+
+impl Analysis {
+    fn operand_types() -> Self {
+        OperandTypes { expected_operands: None }
     }
-}
 
-pub fn validate(file: &File) -> ErrorList {
-    let mut errors = Vec::new();
-    for program in file {
-        validate_program(&mut errors, program);
+    fn visit_file(&mut self, errors: &mut ErrorList, file: &File) {
+        match self {
+            _ => {}
+        }
     }
-    errors
-}
 
-fn validate_program(errors: &mut ErrorList, program: &WithErrData<Program>) {
-    check_result_then(errors, program, BadProgram, |es, prog, _| {
-        let Program { orig, instructions, end } = prog;
-        validate_instruction(es, orig);
-        for instruction in instructions {
-            validate_instruction(es, instruction);
+    fn visit_program(&mut self, errors: &mut ErrorList, program: &Program, span: &Span) {
+        match self {
+            _ => {}
         }
-        validate_instruction(es, end);
-    });
-}
+    }
 
-fn validate_instruction(errors: &mut ErrorList, instruction: &WithErrData<Instruction>) {
-    check_result_then(errors, instruction, BadInstruction, |es, inst, _| {
-        let Instruction { label, opcode, operands } = inst;
-
-        if let Some((Err(_), label_span)) = label {
-            es.push((BadLabel, label_span.clone()));
+    fn visit_instruction(&mut self, errors: &mut ErrorList, instruction: &Instruction, span: &Span) {
+        match self {
+            OperandTypes { expected_operands } => {
+                use Opcode::*;
+                *expected_operands = match &instruction.opcode.0 {
+                    Err(_) => None,
+                    Ok(oc) => Some(match oc {
+                        Add | And      => vec![Register, Register, OperandType::reg_or_imm5()],
+                        Br(_)          => vec![OperandType::pc_offset(9)],
+                        Jsr            => vec![OperandType::pc_offset(11)],
+                        Jmp | Jsrr     => vec![Register],
+                        Ld | Ldi | Lea
+                        | St | Sti     => vec![Register, OperandType::pc_offset(9)],
+                        Ldr | Str      => vec![Register, Register, Number { signed: true, width: 6 }],
+                        Not            => vec![Register, Register],
+                        Ret | Rti
+                        | Getc | Out
+                        | Puts | In
+                        | Putsp | Halt
+                        | End          => vec![],
+                        Trap           => vec![OperandType::signed_or_unsigned_number(8)],
+                        Orig           => vec![OperandType::signed_or_unsigned_number(16)], // TODO: Disallow signed?
+                        Blkw           => vec![UnqualifiedNumber],
+                        Fill           => vec![Or(Box::new(Label),
+                                                  Box::new(OperandType::signed_or_unsigned_number(16)))],
+                        Stringz        => vec![String],
+                    }),
+                };
+            }
         }
+    }
 
-        let (oc_res, opcode_span) = opcode;
-        if let Err(_) = oc_res {
-            es.push((BadOpcode, opcode_span.clone()));
+    fn visit_label(&mut self, errors: &mut ErrorList, label: &String, span: &Span) {
+        match self {
+            _ => {}
         }
+    }
 
-        use Opcode::*;
-        let expected_operands = match oc_res {
-            Err(_) => None,
-            Ok(oc) => Some(match oc {
-                Add | And      => vec![Register, Register, OperandType::reg_or_imm5()],
-                Br(_)          => vec![OperandType::pc_offset(9)],
-                Jsr            => vec![OperandType::pc_offset(11)],
-                Jmp | Jsrr     => vec![Register],
-                Ld | Ldi | Lea
-                | St | Sti     => vec![Register, OperandType::pc_offset(9)],
-                Ldr | Str      => vec![Register, Register, Number { signed: true, width: 6 }],
-                Not            => vec![Register, Register],
-                Ret | Rti
-                | Getc | Out
-                | Puts | In
-                | Putsp | Halt
-                | End          => vec![],
-                Trap           => vec![OperandType::signed_or_unsigned_number(8)],
-                Orig           => vec![OperandType::signed_or_unsigned_number(16)], // TODO: Disallow signed?
-                Blkw           => vec![UnqualifiedNumber],
-                Fill           => vec![Or(Box::new(Label),
-                                          Box::new(OperandType::signed_or_unsigned_number(16)))],
-                Stringz        => vec![String],
-            }),
-        };
-        validate_operands(es, operands, expected_operands);
-    });
-}
-
-fn validate_operands(errors: &mut ErrorList, operands: &WithErrData<Vec<WithErrData<Operand>>>, expected_types: Option<Vec<OperandType>>) {
-    check_result_then(errors, operands, BadOperands, |es, ops, ops_span| {
-        if let Some(expected) = expected_types {
-            // TODO: create longest common subsequence diff for more precise errors
-            let ops_len = ops.len();
-            let exp_len = expected.len();
-            if ops_len != exp_len {
-                es.push((WrongNumberOfOperands { expected: exp_len, actual: ops_len }, ops_span.clone()))
-            } else {
-                for ((op_res, op_span), exp_ty) in zip(ops, expected) {
-                    match op_res {
-                        Err(_) => { es.push((BadOperand, op_span.clone())) }
-                        Ok(op) => {
-                            if !exp_ty.check(op) {
-                                let actual = if let Operand::NumberLiteral(value) = op {
-                                    OperandType::of_number_literal(value, Some(exp_ty.accepted_number_signs()))
-                                } else {
-                                    OperandType::of(op)
-                                };
-                                es.push((OperandTypeMismatch { expected: exp_ty, actual }, op_span.clone()));
+    fn visit_operands(&mut self, errors: &mut ErrorList, operands: &Vec<WithErrData<Operand>>, span: &Span) {
+        match self {
+            OperandTypes { expected_operands } => {
+                if let Some(expected) = expected_operands {
+                    // TODO: create longest common subsequence diff for more precise errors
+                    let ops_len = operands.len();
+                    let exp_len = expected.len();
+                    if ops_len != exp_len {
+                        errors.push((WrongNumberOfOperands { expected: exp_len, actual: ops_len }, span.clone()))
+                    } else {
+                        for ((op_res, op_span), exp_ty) in zip(operands, expected) {
+                            if let Ok(op) = op_res {
+                                if !exp_ty.check(op) {
+                                    let actual = if let Operand::NumberLiteral(value) = op {
+                                        OperandType::of_number_literal(value, Some(exp_ty.accepted_number_signs()))
+                                    } else {
+                                        OperandType::of(op)
+                                    };
+                                    errors.push((OperandTypeMismatch { expected: exp_ty.clone(), actual }, op_span.clone()));
+                                }
                             }
                         }
                     }
                 }
             }
+
         }
-    });
+    }
+
+    fn visit_operand(&mut self, errors: &mut ErrorList, operand: &Operand, span: &Span) {
+        match self {
+            _ => {}
+        }
+    }
+
 }
+
+struct Analyzer {
+    errors: ErrorList,
+    analyses: [Analysis; 1],
+}
+
+impl Analyzer {
+    fn new() -> Self {
+        Self {
+            errors: Vec::new(),
+            analyses: [
+                Analysis::operand_types()
+            ]
+        }
+    }
+
+    fn analyze(&mut self, file: &File) {
+        for analysis in self.analyses.iter_mut() {
+            analysis.visit_file(&mut self.errors, file);
+        }
+        for program in file {
+            self.analyze_program(program);
+        }
+    }
+
+    fn analyze_program(&mut self, program: &WithErrData<Program>) {
+        let (program_res, program_span) = program;
+        match program_res {
+            Err(_) => { self.errors.push((BadProgram, program_span.clone())); }
+            Ok(prog) => {
+                for analysis in self.analyses.iter_mut() {
+                    analysis.visit_program(&mut self.errors, prog, program_span);
+                }
+
+                let Program { orig, instructions, end } = prog;
+                self.analyze_instruction(orig);
+                for instruction in instructions {
+                    self.analyze_instruction(instruction);
+                }
+                self.analyze_instruction(end);
+            }
+        }
+    }
+
+    fn analyze_instruction(&mut self, instruction: &WithErrData<Instruction>) {
+        let (instruction_res, instruction_span) = instruction;
+        match instruction_res {
+            Err(_) => { self.errors.push((BadInstruction, instruction_span.clone())); },
+            Ok(inst) => {
+                for analysis in self.analyses.iter_mut() {
+                    analysis.visit_instruction(&mut self.errors, inst, instruction_span);
+                }
+
+                let Instruction { label, opcode, operands } = inst;
+
+                if let Some(l_wed) = label {
+                    let (label_res, label_span) = l_wed;
+                    match label_res {
+                        Err(_) => { self.errors.push((BadLabel, label_span.clone())) },
+                        Ok(l) => {
+                            for analysis in self.analyses.iter_mut() {
+                                analysis.visit_label(&mut self.errors, l, label_span);
+                            }
+                        }
+                    }
+                }
+
+                let (oc_res, opcode_span) = opcode;
+                if let Err(_) = oc_res {
+                    self.errors.push((BadOpcode, opcode_span.clone()));
+                }
+
+                self.analyze_operands(operands);
+            }
+        }
+    }
+
+    fn analyze_operands(&mut self, operands: &WithErrData<Vec<WithErrData<Operand>>>) {
+        let (operands_res, operands_span) = operands;
+        match operands_res {
+            Err(_) => { self.errors.push((BadOperands, operands_span.clone())); }
+            Ok(ops) => {
+                for analysis in self.analyses.iter_mut() {
+                    analysis.visit_operands(&mut self.errors, ops, operands_span);
+                }
+            }
+        }
+    }
+
+    fn analyze_operand(&mut self, operand: &WithErrData<Operand>) {
+        let (operand_res, operand_span) = operand;
+        match operand_res {
+            Err(_) => { self.errors.push((BadOperand, operand_span.clone())); }
+            Ok(op) => {
+                for analysis in self.analyses.iter_mut() {
+                    analysis.visit_operand(&mut self.errors, op, operand_span);
+                }
+            }
+        }
+    }
+}
+
+pub fn validate(file: &File) -> ErrorList {
+    let mut analyzer = Analyzer::new();
+    analyzer.analyze(file);
+    analyzer.errors
+}
+
