@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, format, Formatter};
 use std::string::String;
 use itertools::zip;
@@ -18,7 +19,8 @@ pub enum Error {
     BadOperands,
     BadOperand,
     WrongNumberOfOperands { expected: usize, actual: usize },
-    OperandTypeMismatch { expected: OperandType, actual: OperandType }
+    OperandTypeMismatch { expected: OperandType, actual: OperandType },
+    DuplicateLabel { label: String, occurrences: Vec<Span>, },
 }
 
 impl Error {
@@ -34,16 +36,35 @@ impl Error {
                 format!("wrong number of operands; expected {}, found: {}", expected, actual),
             OperandTypeMismatch { expected, actual } =>
                 format!("wrong operand type; expected {}, found: {}", expected, actual),
+            DuplicateLabel { label, .. } =>
+                format!("same label used for multiple locations: {}", label)
         }
     }
 }
 
 pub fn report(spanned_error: Spanned<Error>) -> Report {
     let (error, span) = spanned_error;
-    Report::build(ReportKind::Error, (), 0)
-        .with_message(error.message())
-        .with_label(Label::new(span).with_message("here"))
-        .finish()
+    let mut r =
+        Report::build(ReportKind::Error, (), 0)
+            .with_message(error.message());
+    match error {
+        DuplicateLabel { occurrences, .. } => {
+            let mut first_declaration_labeled = false;
+            for occurrence in occurrences {
+                let label_message = if !first_declaration_labeled {
+                    first_declaration_labeled = true;
+                    "first used here"
+                } else {
+                    "also used here"
+                };
+                r = r.with_label(Label::new(occurrence).with_message(label_message))
+            }
+        }
+        _ => {
+            r = r.with_label(Label::new(span).with_message("here"));
+        }
+    }
+    r.finish()
 }
 
 use OperandType::*;
@@ -200,11 +221,16 @@ fn min_unsigned_width(n: i32) -> u8 {
 use Analysis::*;
 enum Analysis {
     OperandTypes { expected_operands: Option<Vec<OperandType>> },
+    DuplicateLabels { labels: HashMap<String, Vec<Span>>, }
 }
 
 impl Analysis {
     fn operand_types() -> Self {
         OperandTypes { expected_operands: None }
+    }
+
+    fn duplicate_labels() -> Self {
+        DuplicateLabels { labels: HashMap::new() }
     }
 
     fn visit_file(&mut self, errors: &mut ErrorList, file: &File) {
@@ -248,11 +274,16 @@ impl Analysis {
                     }),
                 };
             }
+            _ => {}
         }
     }
 
     fn visit_label(&mut self, errors: &mut ErrorList, label: &String, span: &Span) {
         match self {
+            DuplicateLabels { labels } => {
+                let occurrences = labels.entry(label.clone()).or_insert(Vec::new());
+                occurrences.push(span.clone());
+            }
             _ => {}
         }
     }
@@ -282,7 +313,7 @@ impl Analysis {
                     }
                 }
             }
-
+            _ => {}
         }
     }
 
@@ -292,11 +323,28 @@ impl Analysis {
         }
     }
 
+    fn exit_file(&mut self, errors: &mut ErrorList, file: &File) {
+        match self {
+            DuplicateLabels { labels } => {
+                labels.iter()
+                    .filter(|(_, occurrences)| occurrences.len() > 1)
+                    .map(|(label, occurrences)|
+                         (DuplicateLabel {
+                             label: label.clone(),
+                             occurrences: occurrences.clone()
+                         }, 0..0) // TODO: dummy span, refactor so not required for errors with alternate span data
+                    )
+                    .for_each(|e| errors.push(e));
+            }
+            _ => {}
+        }
+    }
+
 }
 
 struct Analyzer {
     errors: ErrorList,
-    analyses: [Analysis; 1],
+    analyses: [Analysis; 2],
 }
 
 impl Analyzer {
@@ -304,7 +352,8 @@ impl Analyzer {
         Self {
             errors: Vec::new(),
             analyses: [
-                Analysis::operand_types()
+                Analysis::operand_types(),
+                Analysis::duplicate_labels()
             ]
         }
     }
@@ -315,6 +364,9 @@ impl Analyzer {
         }
         for program in file {
             self.analyze_program(program);
+        }
+        for analysis in self.analyses.iter_mut() {
+            analysis.exit_file(&mut self.errors, file);
         }
     }
 
