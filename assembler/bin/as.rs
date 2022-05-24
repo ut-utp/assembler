@@ -87,7 +87,7 @@ fn as_() {
             let background = if args.no_os { None } else { Some(lc3_os::OS_IMAGE.clone()) };
 
             let objects =
-                file.into_iter()
+                file.programs.into_iter()
                     .map(|program| assemble(program.0.unwrap()));
 
             let mem = link(objects, background);

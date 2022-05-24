@@ -361,7 +361,7 @@ impl Analyzer {
         for analysis in self.analyses.iter_mut() {
             analysis.visit_file(&mut self.errors, file);
         }
-        for program in file {
+        for program in file.programs.iter() {
             self.analyze_program(program);
         }
         for analysis in self.analyses.iter_mut() {

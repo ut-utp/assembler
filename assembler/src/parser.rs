@@ -1,9 +1,10 @@
 use std::convert::TryFrom;
 use chumsky::prelude::*;
+use chumsky::recovery::SkipUntil;
 use chumsky::Stream;
 use lc3_isa::{Reg, Word};
 
-use crate::Spanned;
+use crate::{Span, Spanned};
 use crate::LeniencyLevel;
 use crate::lexer::{LiteralValue, Opcode, Token};
 
@@ -110,8 +111,8 @@ fn opcode(expected: Opcode) -> impl Parser<Token, WithErrData<Opcode>, Error = S
             if let Token::Opcode(o) = t {
                 Ok(Ok(o))
             } else { unreachable!() }
-        } else if let Token::Invalid = t {
-            Ok(Err(()))
+        // } else if let Token::Invalid = t {
+        //     Ok(Err(()))
         } else {
             Err(Simple::expected_input_found(span, [Some(expected_token.clone())], Some(t)))
         })
@@ -145,7 +146,7 @@ fn instruction(orig: bool, leniency: LeniencyLevel) -> impl Parser<Token, Spanne
             .map_with_span(|os, span| (Ok(os), span));
 
     label.or_not()
-        .then_ignore(just(Token::Newline).repeated())
+        .then_ignore(comments_and_newlines())
         .then(oc)
         .then(operands)
         .map_with_span(|((l, o), os), span| {
@@ -181,23 +182,30 @@ fn program(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<Program>, Erro
         })
 }
 
-pub(crate) type File = Vec<WithErrData<Program>>;
+#[derive(Debug)]
+pub struct File {
+    pub(crate) before_first_orig: Spanned<Vec<Token>>, // TODO: check that this only contains newlines and comments (at least if strict)
+    pub programs: Vec<WithErrData<Program>>
+}
 
-fn file(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<Vec<WithErrData<Program>>>, Error = Simple<Token>> {
-    comments_and_newlines()
-        .ignore_then(
+fn file(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<File>, Error = Simple<Token>> {
+    none_of(Token::Opcode(Opcode::Orig)).repeated()
+        .map_with_span(|toks, span| (toks, span))
+        .then(
             program(leniency)
                 .map(|(p, span)| (Ok(p), span))
                 .separated_by(none_of(Token::Opcode(Opcode::Orig)).repeated())
                 .allow_trailing()
         )
         .then_ignore(end())
-        .map_with_span(|programs, span| (programs, span))
+        .map_with_span(|(before_first_orig, programs), span|
+            (File { before_first_orig, programs }, span))
 }
 
 pub fn parse(src: &str, tokens: Vec<Spanned<Token>>, leniency: LeniencyLevel) -> (Option<Spanned<File>>, Vec<Simple<Token>>) {
     let len = src.chars().count();
-    file(leniency).parse_recovery_verbose(Stream::from_iter(len..len + 1, tokens.into_iter()))
+    file(leniency)
+        .parse_recovery_verbose(Stream::from_iter(len..len + 1, tokens.into_iter()))
 }
 
 
@@ -210,19 +218,34 @@ mod tests {
     use crate::lexer::lex;
 
     #[test]
+    fn capture_tokens_before_first_orig_separately() {
+        let source = "%some #random junk .ORIG x3000\nADD R0, R0, R0\n.END";
+        let (maybe_tokens, _) = lex(source, LeniencyLevel::Lenient);
+        let tokens = maybe_tokens.unwrap();
+        let (file, _) = parse(source, tokens, LeniencyLevel::Lenient);
+
+        println!("{:?}", file);
+        assert_eq!((vec![Token::Invalid, Token::Invalid, Token::Label("JUNK".to_string())], 0..18),
+                   file.unwrap().0.before_first_orig);
+    }
+
+    #[test]
     fn ignore_after_end() {
         let source = ".ORIG x3000\nADD R0, R0, R0\n.END then %some #random junk!";
         let (maybe_tokens, _) = lex(source, LeniencyLevel::Lenient);
         let tokens = maybe_tokens.unwrap();
         let (file, _) = parse(source, tokens, LeniencyLevel::Lenient);
 
-        assert_eq!(Some((vec![(Ok(Program {
-            orig: (Ok(Instruction { label: None, opcode: (Ok(Orig), 0..5), operands: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11) }), 0..11),
-            instructions: vec![
-                (Ok(Instruction { label: None, opcode: (Ok(Add), 12..15), operands: (Ok(vec![(Ok(Register(R0)), 16..18), (Ok(Register(R0)), 20..22), (Ok(Register(R0)), 24..26)]), 16..26) }), 12..26)
-            ],
-        }), 0..31)], 0..56)),
-                   file);
+
+        let f = file.unwrap().0;
+        assert_eq!((vec![], 0..5), f.before_first_orig); // TODO: probably doesn't need fixing, but span should probably be 0..0; find source of bug
+        assert_eq!(vec![(Ok(Program {
+                orig: (Ok(Instruction { label: None, opcode: (Ok(Orig), 0..5), operands: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11) }), 0..11),
+                instructions: vec![
+                    (Ok(Instruction { label: None, opcode: (Ok(Add), 12..15), operands: (Ok(vec![(Ok(Register(R0)), 16..18), (Ok(Register(R0)), 20..22), (Ok(Register(R0)), 24..26)]), 16..26) }), 12..26)
+                ],
+            }), 0..31)],
+           f.programs);
     }
 
     #[test]
@@ -232,13 +255,13 @@ mod tests {
         let tokens = maybe_tokens.unwrap();
         let (file, _) = parse(source, tokens, LeniencyLevel::Lenient);
 
-        assert_eq!(Some((vec![(Ok(Program {
+        assert_eq!(vec![(Ok(Program {
                 orig: (Ok(Instruction { label: None, opcode: (Ok(Orig), 0..5), operands: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11) }), 0..11),
                 instructions: vec![
                     (Ok(Instruction { label: None, opcode: (Ok(Add), 12..15), operands: (Ok(vec![(Ok(Register(R0)), 16..18), (Ok(Register(R0)), 20..22), (Err(()), 24..29)]), 16..29) }), 12..29)
                 ],
-            }), 0..44)], 0..44)),
-            file);
+            }), 0..44)],
+            file.unwrap().0.programs);
     }
 
     #[test]
@@ -248,13 +271,13 @@ mod tests {
         let tokens = maybe_tokens.unwrap();
         let (file, _) = parse(source, tokens, LeniencyLevel::Lenient);
 
-        assert_eq!(Some((vec![(Ok(Program {
+        assert_eq!(vec![(Ok(Program {
                 orig: (Ok(Instruction { label: None, opcode: (Ok(Orig), 0..5), operands: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11) }), 0..11),
                 instructions: vec![
-                       (Ok(Instruction { label: Some((Err(()), 12..18)), opcode: (Ok(Add), 19..22), operands: (Ok(vec![(Ok(Register(R0)), 23..25), (Ok(Register(R0)), 27..29), (Ok(NumberLiteral(LiteralValue::Word(1))), 31..33)]), 23..33) }), 12..33)
+                   (Ok(Instruction { label: Some((Err(()), 12..18)), opcode: (Ok(Add), 19..22), operands: (Ok(vec![(Ok(Register(R0)), 23..25), (Ok(Register(R0)), 27..29), (Ok(NumberLiteral(LiteralValue::Word(1))), 31..33)]), 23..33) }), 12..33)
                 ],
-            }), 0..48)], 0..48)),
-            file);
+            }), 0..48)],
+            file.unwrap().0.programs);
     }
 
 }
