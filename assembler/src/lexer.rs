@@ -15,13 +15,14 @@ pub enum Token {
     NumberLiteral(LiteralValue),
     StringLiteral(String),
     Label(String),
+    End,
 
     Newline,
     Comma,
 
     Comment,
 
-    Error,
+    Invalid,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -95,7 +96,6 @@ pub enum Opcode {
     Fill,
     Blkw,
     Stringz,
-    End,
 
     // Named TRAP routines
     Getc,
@@ -239,10 +239,13 @@ fn tokens(leniency: LeniencyLevel) -> impl Parser<char, Vec<Spanned<Token>>, Err
             one_opcode(".FILL", Fill),
             one_opcode(".BLKW", Blkw),
             one_opcode(".STRINGZ", Stringz),
-            one_opcode(".END", End),
         )))
         .then_ignore(terminator.clone().rewind())
         .map(Token::Opcode);
+
+    let end_pseudo_op = just(".END")
+        .then_ignore(terminator.clone().rewind())
+        .to(Token::End);
 
     use Reg::*;
     let register = choice((
@@ -281,6 +284,7 @@ fn tokens(leniency: LeniencyLevel) -> impl Parser<char, Vec<Spanned<Token>>, Err
 
     let token = choice((
         opcode,
+        end_pseudo_op,
         register,
         number_literal,
         unqualified_number_literal,
@@ -290,7 +294,7 @@ fn tokens(leniency: LeniencyLevel) -> impl Parser<char, Vec<Spanned<Token>>, Err
         comma,
         comment(),
     ))
-        .recover_with(skip_until([',', ';', ' ', '\t', '\n', '\r', '\x0B', '\x0C', '\u{0085}', '\u{2028}', '\u{2029}'], |_| Token::Error)); // TODO: improve?
+        .recover_with(skip_until([',', ';', ' ', '\t', '\n', '\r', '\x0B', '\x0C', '\u{0085}', '\u{2028}', '\u{2029}'], |_| Token::Invalid)); // TODO: improve?
 
     token
         .map_with_span(|token, span| (token, span))
@@ -394,7 +398,7 @@ mod tests {
         let (tokens, _) = lex(source, LeniencyLevel::Lenient);
         assert_eq!(
             Some(vec![
-                (Error, 0..5),
+                (Invalid, 0..5),
             ]),
             tokens);
     }
@@ -410,7 +414,7 @@ mod tests {
                 (Comma,         6.. 7),
                 (Register(R0),  8..10),
                 (Comma,        10..11),
-                (Error,        12..17),
+                (Invalid,      12..17),
                 (Comment,      17..27),
             ]),
             tokens);

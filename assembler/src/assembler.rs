@@ -317,7 +317,6 @@ impl TryFrom<parser::Instruction> for Instruction {
 
             // TODO: improve error
             Opcode::Orig => Err(()),
-            Opcode::End => Err(()),
 
             Opcode::Fill => {
                 let mut os = operands.into_iter();

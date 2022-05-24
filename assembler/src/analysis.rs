@@ -263,8 +263,7 @@ impl Analysis {
                         Ret | Rti
                         | Getc | Out
                         | Puts | In
-                        | Putsp | Halt
-                        | End          => vec![],
+                        | Putsp | Halt => vec![],
                         Trap           => vec![OperandType::signed_or_unsigned_number(8)],
                         Orig           => vec![OperandType::signed_or_unsigned_number(16)], // TODO: Disallow signed?
                         Blkw           => vec![UnqualifiedNumber],
@@ -379,12 +378,11 @@ impl Analyzer {
                     analysis.visit_program(&mut self.errors, prog, program_span);
                 }
 
-                let Program { orig, instructions, end } = prog;
+                let Program { orig, instructions } = prog;
                 self.analyze_instruction(orig);
                 for instruction in instructions {
                     self.analyze_instruction(instruction);
                 }
-                self.analyze_instruction(end);
             }
         }
     }
