@@ -548,8 +548,7 @@ fn second_pass(symbol_table: SymbolTable, origin: Addr, instructions: Vec<Instru
 }
 
 pub fn assemble(program: Program) -> Object {
-    let Program { orig, instructions: parser_instructions, .. } = program;
-    let parser::Instruction { operands: raw_orig_operands, .. } = unwrap(orig);
+    let Program { orig: raw_orig_operands, instructions: parser_instructions, .. } = program;
     let orig_operand = unwrap(raw_orig_operands).remove(0);
     let origin = LiteralValue::unwrap_try_from(orig_operand).unwrap_try_into().unwrap();
 

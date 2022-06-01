@@ -12,7 +12,7 @@ pub(crate) type WithErrData<T> = Spanned<Result<T, ()>>;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Program {
-    pub(crate) orig: WithErrData<Instruction>,
+    pub(crate) orig: WithErrData<Vec<WithErrData<Operand>>>,
     pub(crate) instructions: Vec<WithErrData<Instruction>>,
 }
 
@@ -94,32 +94,19 @@ fn operand() -> impl Parser<Token, WithErrData<Operand>, Error = Simple<Token>> 
     operand.map_with_span(|o, span| (o, span))
 }
 
-fn any_opcode() -> impl Parser<Token, WithErrData<Opcode>, Error = Simple<Token>> {
-    filter_map(move |span, t: Token|
-        match t.clone() {
-            Token::Opcode(o) => Ok(Ok(o)),
-            Token::Invalid => Ok(Err(())),
-            _ => Err(Simple::expected_input_found(span, None, Some(t))) // TODO: improve error, expected
-        })
-        .map_with_span(|o, span| (o, span))
+fn operands(leniency: LeniencyLevel) -> impl Parser<Token, WithErrData<Vec<WithErrData<Operand>>>, Error = Simple<Token>> {
+    let operand_separator: Box<dyn Parser<Token, (), Error = Simple<Token>>> =
+        match leniency {
+            LeniencyLevel::Lenient => Box::new(just(Token::Comma).or_not().ignored()),
+            LeniencyLevel::Strict => Box::new(just(Token::Comma).ignored()),
+        };
+
+    operand()
+        .separated_by(operand_separator)
+        .map_with_span(|os, span| (Ok(os), span))
 }
 
-fn opcode(expected: Opcode) -> impl Parser<Token, WithErrData<Opcode>, Error = Simple<Token>> {
-    let expected_token = Token::Opcode(expected);
-    filter_map(move |span, t|
-        if t == expected_token {
-            if let Token::Opcode(o) = t {
-                Ok(Ok(o))
-            } else { unreachable!() }
-        // } else if let Token::Invalid = t {
-        //     Ok(Err(()))
-        } else {
-            Err(Simple::expected_input_found(span, [Some(expected_token.clone())], Some(t)))
-        })
-        .map_with_span(|o, span| (o, span))
-}
-
-fn instruction(orig: bool, leniency: LeniencyLevel) -> impl Parser<Token, Spanned<Instruction>, Error = Simple<Token>> {
+fn instruction(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<Instruction>, Error = Simple<Token>> {
     let label =
         select! {
             Token::Label(s) => Ok(s),
@@ -127,28 +114,19 @@ fn instruction(orig: bool, leniency: LeniencyLevel) -> impl Parser<Token, Spanne
         }
         .map_with_span(|l, s| (l, s));
 
-    let oc: Box<dyn Parser<Token, WithErrData<Opcode>, Error = Simple<Token>>> =
-        if orig {
-            Box::new(opcode(Opcode::Orig))
-        } else {
-            Box::new(any_opcode())
-        };
-
-    let operand_separator: Box<dyn Parser<Token, (), Error = Simple<Token>>> =
-        match leniency {
-            LeniencyLevel::Lenient => Box::new(just(Token::Comma).or_not().ignored()),
-            LeniencyLevel::Strict => Box::new(just(Token::Comma).ignored()),
-        };
-
-    let operands =
-        operand()
-            .separated_by(operand_separator)
-            .map_with_span(|os, span| (Ok(os), span));
+    let opcode =
+        filter_map(move |span, t: Token|
+            match t.clone() {
+                Token::Opcode(o) => Ok(Ok(o)),
+                Token::Invalid => Ok(Err(())),
+                _ => Err(Simple::expected_input_found(span, None, Some(t))) // TODO: improve error, expected
+            })
+            .map_with_span(|o, span| (o, span));
 
     label.or_not()
         .then_ignore(comments_and_newlines())
-        .then(oc)
-        .then(operands)
+        .then(opcode)
+        .then(operands(leniency))
         .map_with_span(|((l, o), os), span| {
             let instruction = Instruction {
                 label: l,
@@ -167,10 +145,13 @@ fn comments_and_newlines() -> impl Parser<Token, (), Error = Simple<Token>> {
 }
 
 fn program(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<Program>, Error = Simple<Token>> {
-    instruction(true, leniency)
-        .map(|(i, span)| (Ok(i), span))
+    let orig =
+        just(Token::Opcode(Opcode::Orig))
+            .ignore_then(operands(leniency));
+
+    orig
         .then(
-            instruction(false, leniency)
+            instruction(leniency)
                 .map(|(i, span)| (Ok(i), span))
                 .separated_by(comments_and_newlines())
                 .allow_leading()
@@ -240,7 +221,7 @@ mod tests {
         let f = file.unwrap().0;
         assert_eq!((vec![], 0..5), f.before_first_orig); // TODO: probably doesn't need fixing, but span should probably be 0..0; find source of bug
         assert_eq!(vec![(Ok(Program {
-                orig: (Ok(Instruction { label: None, opcode: (Ok(Orig), 0..5), operands: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11) }), 0..11),
+                orig: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11),
                 instructions: vec![
                     (Ok(Instruction { label: None, opcode: (Ok(Add), 12..15), operands: (Ok(vec![(Ok(Register(R0)), 16..18), (Ok(Register(R0)), 20..22), (Ok(Register(R0)), 24..26)]), 16..26) }), 12..26)
                 ],
@@ -256,7 +237,7 @@ mod tests {
         let (file, _) = parse(source, tokens, LeniencyLevel::Lenient);
 
         assert_eq!(vec![(Ok(Program {
-                orig: (Ok(Instruction { label: None, opcode: (Ok(Orig), 0..5), operands: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11) }), 0..11),
+                orig: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11),
                 instructions: vec![
                     (Ok(Instruction { label: None, opcode: (Ok(Add), 12..15), operands: (Ok(vec![(Ok(Register(R0)), 16..18), (Ok(Register(R0)), 20..22), (Err(()), 24..29)]), 16..29) }), 12..29)
                 ],
@@ -272,7 +253,7 @@ mod tests {
         let (file, _) = parse(source, tokens, LeniencyLevel::Lenient);
 
         assert_eq!(vec![(Ok(Program {
-                orig: (Ok(Instruction { label: None, opcode: (Ok(Orig), 0..5), operands: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11) }), 0..11),
+                orig: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11),
                 instructions: vec![
                    (Ok(Instruction { label: Some((Err(()), 12..18)), opcode: (Ok(Add), 19..22), operands: (Ok(vec![(Ok(Register(R0)), 23..25), (Ok(Register(R0)), 27..29), (Ok(NumberLiteral(LiteralValue::Word(1))), 31..33)]), 23..33) }), 12..33)
                 ],

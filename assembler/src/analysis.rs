@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, format, Formatter};
 use std::string::String;
-use itertools::zip;
+use itertools::{concat, zip};
 use ariadne::{Label, Report, ReportBuilder, ReportKind};
-use lc3_isa::{SignedWord, Word};
+use lc3_isa::{Addr, SignedWord, Word};
 use crate::lexer::{LiteralValue, Opcode};
 use crate::parser::{File, Instruction, Operand, Program, WithErrData};
 use crate::{Span, Spanned};
@@ -218,236 +218,297 @@ fn min_unsigned_width(n: i32) -> u8 {
     width as u8
 }
 
-use Analysis::*;
-enum Analysis {
-    OperandTypes { expected_operands: Option<Vec<OperandType>> },
-    DuplicateLabels { labels: HashMap<String, Vec<Span>>, }
+enum InvalidSymbolReason {
+    InvalidOrig,
+    PriorInvalidInstruction { estimated_addr: Addr },
+    Duplicated,
+    OutOfBounds,
 }
 
-impl Analysis {
-    fn operand_types() -> Self {
-        OperandTypes { expected_operands: None }
-    }
+type SymbolTableValue = Result<Addr, InvalidSymbolReason>;
 
-    fn duplicate_labels() -> Self {
-        DuplicateLabels { labels: HashMap::new() }
-    }
 
-    fn visit_file(&mut self, errors: &mut ErrorList, file: &File) {
-        match self {
-            _ => {}
-        }
-    }
-
-    fn visit_program(&mut self, errors: &mut ErrorList, program: &Program, span: &Span) {
-        match self {
-            _ => {}
-        }
-    }
-
-    fn visit_instruction(&mut self, errors: &mut ErrorList, instruction: &Instruction, span: &Span) {
-        match self {
-            OperandTypes { expected_operands } => {
-                use Opcode::*;
-                *expected_operands = match &instruction.opcode.0 {
-                    Err(_) => None,
-                    Ok(oc) => Some(match oc {
-                        Add | And      => vec![Register, Register, OperandType::reg_or_imm5()],
-                        Br(_)          => vec![OperandType::pc_offset(9)],
-                        Jsr            => vec![OperandType::pc_offset(11)],
-                        Jmp | Jsrr     => vec![Register],
-                        Ld | Ldi | Lea
-                        | St | Sti     => vec![Register, OperandType::pc_offset(9)],
-                        Ldr | Str      => vec![Register, Register, Number { signed: true, width: 6 }],
-                        Not            => vec![Register, Register],
-                        Ret | Rti
-                        | Getc | Out
-                        | Puts | In
-                        | Putsp | Halt => vec![],
-                        Trap           => vec![OperandType::signed_or_unsigned_number(8)],
-                        Orig           => vec![OperandType::signed_or_unsigned_number(16)], // TODO: Disallow signed?
-                        Blkw           => vec![UnqualifiedNumber],
-                        Fill           => vec![Or(Box::new(Label),
-                                                  Box::new(OperandType::signed_or_unsigned_number(16)))],
-                        Stringz        => vec![String],
-                    }),
-                };
-            }
-            _ => {}
-        }
-    }
-
-    fn visit_label(&mut self, errors: &mut ErrorList, label: &String, span: &Span) {
-        match self {
-            DuplicateLabels { labels } => {
-                let occurrences = labels.entry(label.clone()).or_insert(Vec::new());
-                occurrences.push(span.clone());
-            }
-            _ => {}
-        }
-    }
-
-    fn visit_operands(&mut self, errors: &mut ErrorList, operands: &Vec<WithErrData<Operand>>, span: &Span) {
-        match self {
-            OperandTypes { expected_operands } => {
-                if let Some(expected) = expected_operands {
-                    // TODO: create longest common subsequence diff for more precise errors
-                    let ops_len = operands.len();
-                    let exp_len = expected.len();
-                    if ops_len != exp_len {
-                        errors.push((WrongNumberOfOperands { expected: exp_len, actual: ops_len }, span.clone()))
-                    } else {
-                        for ((op_res, op_span), exp_ty) in zip(operands, expected) {
-                            if let Ok(op) = op_res {
-                                if !exp_ty.check(op) {
-                                    let actual = if let Operand::NumberLiteral(value) = op {
-                                        OperandType::of_number_literal(value, Some(exp_ty.accepted_number_signs()))
-                                    } else {
-                                        OperandType::of(op)
-                                    };
-                                    errors.push((OperandTypeMismatch { expected: exp_ty.clone(), actual }, op_span.clone()));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn visit_operand(&mut self, errors: &mut ErrorList, operand: &Operand, span: &Span) {
-        match self {
-            _ => {}
-        }
-    }
-
-    fn exit_file(&mut self, errors: &mut ErrorList, file: &File) {
-        match self {
-            DuplicateLabels { labels } => {
-                labels.iter()
-                    .filter(|(_, occurrences)| occurrences.len() > 1)
-                    .map(|(label, occurrences)|
-                         (DuplicateLabel {
-                             label: label.clone(),
-                             occurrences: occurrences.clone()
-                         }, 0..0) // TODO: dummy span, refactor so not required for errors with alternate span data
-                    )
-                    .for_each(|e| errors.push(e));
-            }
-            _ => {}
-        }
-    }
-
+#[derive(Default)]
+struct ParseErrors {
+    errors: ErrorList
 }
 
-struct Analyzer {
-    errors: ErrorList,
-    analyses: [Analysis; 2],
-}
-
-impl Analyzer {
+impl ParseErrors {
     fn new() -> Self {
-        Self {
-            errors: Vec::new(),
-            analyses: [
-                Analysis::operand_types(),
-                Analysis::duplicate_labels()
-            ]
-        }
+        Default::default()
     }
 
-    fn analyze(&mut self, file: &File) {
-        for analysis in self.analyses.iter_mut() {
-            analysis.visit_file(&mut self.errors, file);
-        }
-        for program in file.programs.iter() {
-            self.analyze_program(program);
-        }
-        for analysis in self.analyses.iter_mut() {
-            analysis.exit_file(&mut self.errors, file);
-        }
+    fn push_error(&mut self, error: Error, span: &Span) {
+        self.errors.push((error, span.clone()));
+    }
+}
+
+impl MutVisitor for ParseErrors {
+    fn enter_program_error(&mut self, span: &Span) {
+        self.push_error(BadProgram, span);
+    }
+    fn enter_orig_error(&mut self, span: &Span) {
+        self.push_error(BadOperands, span);
+    }
+    fn enter_instruction_error(&mut self, span: &Span) {
+        self.push_error(BadInstruction, span);
+    }
+    fn enter_label_error(&mut self, span: &Span) {
+        self.push_error(BadLabel, span);
+    }
+    fn enter_opcode_error(&mut self, span: &Span) {
+        self.push_error(BadOpcode, span);
+    }
+    fn enter_operands_error(&mut self, span: &Span) {
+        self.push_error(BadOperands, span);
+    }
+    fn enter_operand_error(&mut self, span: &Span) {
+        self.push_error(BadOperand, span);
+    }
+}
+
+
+#[derive(Default)]
+struct DuplicateLabels {
+    errors: ErrorList,
+    labels: HashMap<String, Vec<Span>>,
+}
+
+impl DuplicateLabels {
+    fn new() -> Self {
+        Default::default()
+    }
+}
+
+impl MutVisitor for DuplicateLabels {
+    fn exit_file(&mut self, _file: &File) {
+        let DuplicateLabels { errors, labels } = self;
+        labels.iter()
+            .filter(|(_, occurrences)| occurrences.len() > 1)
+            .map(|(label, occurrences)|
+                     (DuplicateLabel {
+                         label: label.clone(),
+                         occurrences: occurrences.clone()
+                     }, 0..0) // TODO: dummy span, refactor so not required for errors with alternate span data
+            )
+            .for_each(|e| errors.push(e));
     }
 
-    fn analyze_program(&mut self, program: &WithErrData<Program>) {
-        let (program_res, program_span) = program;
-        match program_res {
-            Err(_) => { self.errors.push((BadProgram, program_span.clone())); }
-            Ok(prog) => {
-                for analysis in self.analyses.iter_mut() {
-                    analysis.visit_program(&mut self.errors, prog, program_span);
-                }
+    fn enter_label(&mut self, label: &String, span: &Span) {
+        let occurrences = self.labels.entry(label.clone()).or_insert(Vec::new());
+        occurrences.push(span.clone());
+    }
+}
 
-                let Program { orig, instructions } = prog;
-                self.analyze_instruction(orig);
-                for instruction in instructions {
-                    self.analyze_instruction(instruction);
-                }
+
+#[derive(Default)]
+struct OperandTypes {
+    errors: ErrorList,
+    expected_operands: Option<Vec<OperandType>>
+}
+
+impl OperandTypes {
+    fn new() -> Self {
+        Default::default()
+    }
+}
+
+fn orig_expected_operands() -> Vec<OperandType> {
+    vec![OperandType::signed_or_unsigned_number(16)] // TODO: Disallow signed?
+}
+
+impl MutVisitor for OperandTypes {
+    fn enter_orig(&mut self, orig: &Vec<WithErrData<Operand>>, span: &Span) {
+        self.expected_operands = Some(orig_expected_operands());
+        self.enter_operands(orig, span);
+    }
+
+    fn enter_opcode_error(&mut self, _span: &Span) {
+        self.expected_operands = None;
+    }
+
+    fn enter_opcode(&mut self, opcode: &Opcode, _span: &Span) {
+        use Opcode::*;
+        self.expected_operands = Some(
+            match opcode {
+                Add | And      => vec![Register, Register, OperandType::reg_or_imm5()],
+                Br(_)          => vec![OperandType::pc_offset(9)],
+                Jsr            => vec![OperandType::pc_offset(11)],
+                Jmp | Jsrr     => vec![Register],
+                Ld | Ldi | Lea
+                | St | Sti     => vec![Register, OperandType::pc_offset(9)],
+                Ldr | Str      => vec![Register, Register, Number { signed: true, width: 6 }],
+                Not            => vec![Register, Register],
+                Ret | Rti
+                | Getc | Out
+                | Puts | In
+                | Putsp | Halt => vec![],
+                Trap           => vec![OperandType::signed_or_unsigned_number(8)],
+                Orig           => orig_expected_operands(),
+                Blkw           => vec![UnqualifiedNumber],
+                Fill           => vec![Or(Box::new(Label),
+                                          Box::new(OperandType::signed_or_unsigned_number(16)))],
+                Stringz        => vec![String],
             }
-        }
+        );
     }
 
-    fn analyze_instruction(&mut self, instruction: &WithErrData<Instruction>) {
-        let (instruction_res, instruction_span) = instruction;
-        match instruction_res {
-            Err(_) => { self.errors.push((BadInstruction, instruction_span.clone())); },
-            Ok(inst) => {
-                for analysis in self.analyses.iter_mut() {
-                    analysis.visit_instruction(&mut self.errors, inst, instruction_span);
-                }
-
-                let Instruction { label, opcode, operands } = inst;
-
-                if let Some(l_wed) = label {
-                    let (label_res, label_span) = l_wed;
-                    match label_res {
-                        Err(_) => { self.errors.push((BadLabel, label_span.clone())) },
-                        Ok(l) => {
-                            for analysis in self.analyses.iter_mut() {
-                                analysis.visit_label(&mut self.errors, l, label_span);
-                            }
+    fn enter_operands(&mut self, operands: &Vec<WithErrData<Operand>>, span: &Span) {
+        if let Some(expected) = &self.expected_operands {
+            // TODO: create longest common subsequence diff for more precise errors
+            let ops_len = operands.len();
+            let exp_len = expected.len();
+            if ops_len != exp_len {
+                self.errors.push((WrongNumberOfOperands { expected: exp_len, actual: ops_len }, span.clone()))
+            } else {
+                for ((op_res, op_span), exp_ty) in zip(operands, expected) {
+                    if let Ok(op) = op_res {
+                        if !exp_ty.check(op) {
+                            let actual = if let Operand::NumberLiteral(value) = op {
+                                OperandType::of_number_literal(value, Some(exp_ty.accepted_number_signs()))
+                            } else {
+                                OperandType::of(op)
+                            };
+                            self.errors.push((OperandTypeMismatch { expected: exp_ty.clone(), actual }, op_span.clone()));
                         }
                     }
                 }
-
-                let (oc_res, opcode_span) = opcode;
-                if let Err(_) = oc_res {
-                    self.errors.push((BadOpcode, opcode_span.clone()));
-                }
-
-                self.analyze_operands(operands);
             }
         }
     }
+}
 
-    fn analyze_operands(&mut self, operands: &WithErrData<Vec<WithErrData<Operand>>>) {
-        let (operands_res, operands_span) = operands;
-        match operands_res {
-            Err(_) => { self.errors.push((BadOperands, operands_span.clone())); }
-            Ok(ops) => {
-                for analysis in self.analyses.iter_mut() {
-                    analysis.visit_operands(&mut self.errors, ops, operands_span);
-                }
+fn visit(v: &mut impl MutVisitor, file: &File) {
+    v.enter_file(file);
+    for program in file.programs.iter() {
+        visit_program(v, program);
+    }
+    v.exit_file(file);
+}
+
+fn visit_program(v: &mut impl MutVisitor, program: &WithErrData<Program>) {
+    let (program_res, span) = program;
+    match program_res {
+        Err(_) => { v.enter_program_error(span); }
+        Ok(p) => {
+            v.enter_program( p, span);
+
+            let Program { orig, instructions } = p;
+            visit_orig(v, orig);
+            for instruction in instructions {
+                visit_instruction(v, instruction);
             }
         }
     }
+}
 
-    fn analyze_operand(&mut self, operand: &WithErrData<Operand>) {
-        let (operand_res, operand_span) = operand;
-        match operand_res {
-            Err(_) => { self.errors.push((BadOperand, operand_span.clone())); }
-            Ok(op) => {
-                for analysis in self.analyses.iter_mut() {
-                    analysis.visit_operand(&mut self.errors, op, operand_span);
-                }
+fn visit_orig(v: &mut impl MutVisitor, orig: &WithErrData<Vec<WithErrData<Operand>>>) {
+    let (orig_res, span) = orig;
+    match orig_res {
+        Err(_) => { v.enter_orig_error(span); }
+        Ok(o) => {
+            v.enter_orig( o, span);
+            for operand in o {
+                visit_operand(v, operand);
             }
         }
     }
+}
+
+fn visit_instruction(v: &mut impl MutVisitor, instruction: &WithErrData<Instruction>) {
+    let (inst_res, span) = instruction;
+    match inst_res {
+        Err(_) => { v.enter_instruction_error(span); }
+        Ok(i) => {
+            v.enter_instruction(i, span);
+
+            let Instruction { label, opcode, operands } = i;
+            if let Some(l) = label {
+                visit_label(v, l);
+            }
+            visit_opcode(v, opcode);
+            visit_operands(v, operands);
+        }
+    }
+}
+
+fn visit_label(v: &mut impl MutVisitor, label: &WithErrData<String>) {
+    let (label_res, span) = label;
+    match label_res {
+        Err(_) => { v.enter_label_error(span); }
+        Ok(l) => { v.enter_label( l, span); }
+    }
+}
+
+fn visit_opcode(v: &mut impl MutVisitor, opcode: &WithErrData<Opcode>) {
+    let (opcode_res, span) = opcode;
+    match opcode_res {
+        Err(_) => { v.enter_opcode_error(span); }
+        Ok(oc) => { v.enter_opcode( oc, span); }
+    }
+}
+
+fn visit_operands(v: &mut impl MutVisitor, operands: &WithErrData<Vec<WithErrData<Operand>>>) {
+    let (ops_res, span) = operands;
+    match ops_res {
+        Err(_) => { v.enter_operands_error(span); }
+        Ok(o) => {
+            v.enter_operands( o, span);
+            for operand in o {
+                visit_operand(v, operand);
+            }
+        }
+    }
+}
+
+fn visit_operand(v: &mut impl MutVisitor, operand: &WithErrData<Operand>) {
+    let (op_res, span) = operand;
+    match op_res {
+        Err(_) => { v.enter_operand_error(span); }
+        Ok(o) => { v.enter_operand( o, span); }
+    }
+}
+
+trait MutVisitor {
+    fn enter_file(&mut self, _file: &File) {}
+    fn exit_file(&mut self, _file: &File) {}
+
+    fn enter_program_error(&mut self, _span: &Span) {}
+    fn enter_program(&mut self, _program: &Program, _span: &Span) {}
+
+    fn enter_orig_error(&mut self, _span: &Span) {}
+    fn enter_orig(&mut self, _orig: &Vec<WithErrData<Operand>>, _span: &Span) {}
+
+    fn enter_instruction_error(&mut self, _span: &Span) {}
+    fn enter_instruction(&mut self, _instruction: &Instruction, _span: &Span) {}
+
+    fn enter_label_error(&mut self, _span: &Span) {}
+    fn enter_label(&mut self, _label: &String, _span: &Span) {}
+
+    fn enter_opcode_error(&mut self, _span: &Span) {}
+    fn enter_opcode(&mut self, _opcode: &Opcode, _span: &Span) {}
+
+    fn enter_operands_error(&mut self, _span: &Span) {}
+    fn enter_operands(&mut self, _operands: &Vec<WithErrData<Operand>>, _span: &Span) {}
+
+    fn enter_operand_error(&mut self, _span: &Span) {}
+    fn enter_operand(&mut self, _operand: &Operand, _span: &Span) {}
 }
 
 pub fn validate(file: &File) -> ErrorList {
-    let mut analyzer = Analyzer::new();
-    analyzer.analyze(file);
-    analyzer.errors
+    let mut pe = ParseErrors::new();
+    visit(&mut pe, file);
+
+    let mut dl = DuplicateLabels::new();
+    visit(&mut dl, file);
+
+    let mut ot = OperandTypes::new();
+    visit(&mut ot, file);
+
+    concat([
+      pe.errors,
+      dl.errors,
+      ot.errors
+    ])
 }
 
