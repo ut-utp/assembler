@@ -3,7 +3,7 @@ use chumsky::chain::Chain;
 use chumsky::Parser;
 use lc3_isa::util::MemoryDump;
 use lc3_isa::{Addr, ADDR_SPACE_SIZE_IN_WORDS, Word};
-use crate::assembler::{try_assemble, SymbolTable, Object, ObjectWord, AssemblyResult};
+use crate::assembler::{assemble_instruction, SymbolTable, Object, ObjectWord, AssemblyResult};
 
 struct LinkedObject {
     origin: Addr,
@@ -30,7 +30,7 @@ fn link_object(symbol_table: &SymbolTable, object: Object) -> LinkedObject {
                 location_counter += 1;
             },
             ObjectWord::UnlinkedInstruction(instruction) =>
-                match try_assemble(&symbol_table, &location_counter, instruction) {
+                match assemble_instruction(&symbol_table, &location_counter, instruction) {
                     AssemblyResult::SingleObjectWord(word) => match word {
                         ObjectWord::Value(word) => {
                             words.push(word);

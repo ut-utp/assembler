@@ -1,4 +1,4 @@
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use chumsky::prelude::*;
 use chumsky::recovery::SkipUntil;
 use chumsky::Stream;
@@ -9,6 +9,31 @@ use crate::LeniencyLevel;
 use crate::lexer::{LiteralValue, Opcode, Token};
 
 pub(crate) type WithErrData<T> = Spanned<Result<T, ()>>;
+
+pub(crate) fn get_first<T>(v: &Vec<WithErrData<T>>) -> Option<&T> {
+    v.get(0)
+        .and_then(|res| get_result(res).as_ref().ok())
+}
+
+pub(crate) fn get_result<T>(v: &WithErrData<T>) -> &Result<T, ()> {
+    &v.0
+}
+
+pub(crate) fn result<T>(v: WithErrData<T>) -> Result<T, ()> {
+    v.0
+}
+
+pub(crate) fn try_result<T>(maybe_v: Option<WithErrData<T>>) -> Result<T, ()> {
+    result(maybe_v.ok_or(())?)
+}
+
+pub(crate) fn try_map<T, U, E>(maybe_v: Option<WithErrData<T>>) -> Result<U, ()> where
+    U: TryFrom<T, Error=E>
+{
+    try_result(maybe_v)?
+        .try_into()
+        .map_err(|_| ())
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Program {
@@ -57,27 +82,27 @@ impl TryFrom<Operand> for LiteralValue {
 }
 
 impl Operand {
-    pub(crate) fn string(self) -> String {
+    pub(crate) fn get_string(self) -> Option<String> {
         if let Self::StringLiteral(s) = self {
-            s
+            Some(s)
         } else {
-            panic!("Not a string literal")
+            None
         }
     }
 
-    pub(crate) fn label(self) -> String {
+    pub(crate) fn get_label(self) -> Option<String> {
         if let Self::Label(l) = self {
-            l
+            Some(l)
         } else {
-            panic!("Not a label")
+            None
         }
     }
 
-    pub(crate) fn unqualified_number_value(self) -> Word {
+    pub(crate) fn get_unqualified_number_value(self) -> Option<Word> {
         if let Self::UnqualifiedNumberLiteral(w) = self {
-            w
+            Some(w)
         } else {
-            panic!("Not an unqualified number literal")
+            None
         }
     }
 }
@@ -106,7 +131,7 @@ fn operands(leniency: LeniencyLevel) -> impl Parser<Token, WithErrData<Vec<WithE
         .map_with_span(|os, span| (Ok(os), span))
 }
 
-fn instruction(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<Instruction>, Error = Simple<Token>> {
+fn instruction(leniency: LeniencyLevel) -> impl Parser<Token, WithErrData<Instruction>, Error = Simple<Token>> {
     let label =
         select! {
             Token::Label(s) => Ok(s),
@@ -124,7 +149,7 @@ fn instruction(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<Instructio
             .map_with_span(|o, span| (o, span));
 
     label.or_not()
-        .then_ignore(comments_and_newlines())
+        .then_ignore(comments_and_newlines().or_not())
         .then(opcode)
         .then(operands(leniency))
         .map_with_span(|((l, o), os), span| {
@@ -133,14 +158,19 @@ fn instruction(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<Instructio
                 opcode: o,
                 operands: os,
             };
-            (instruction, span)
+            println!("{:?}", instruction);
+            (Ok(instruction), span)
         })
+        // Pseudo-recovery strategy -- take everything until the end of the line. Consider replacing with `recover_via` if merged into `chumsky`
+        .or(none_of([Token::End, Token::Comment, Token::Newline]).repeated().at_least(1)
+            .map_with_span(|_, span| (Err(()), span)))
 }
+
 
 fn comments_and_newlines() -> impl Parser<Token, (), Error = Simple<Token>> {
     just(Token::Comment).or_not()
         .then(just(Token::Newline).repeated().at_least(1))
-        .repeated()
+        .repeated().at_least(1)
         .ignored()
 }
 
@@ -152,7 +182,6 @@ fn program(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<Program>, Erro
     orig
         .then(
             instruction(leniency)
-                .map(|(i, span)| (Ok(i), span))
                 .separated_by(comments_and_newlines())
                 .allow_leading()
                 .allow_trailing()
@@ -205,7 +234,6 @@ mod tests {
         let tokens = maybe_tokens.unwrap();
         let (file, _) = parse(source, tokens, LeniencyLevel::Lenient);
 
-        println!("{:?}", file);
         assert_eq!((vec![Token::Invalid, Token::Invalid, Token::Label("JUNK".to_string())], 0..18),
                    file.unwrap().0.before_first_orig);
     }

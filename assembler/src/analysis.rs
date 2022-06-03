@@ -1,11 +1,12 @@
 use std::collections::{HashMap, HashSet};
+use std::convert::{TryFrom, TryInto};
 use std::fmt::{Display, format, Formatter};
 use std::string::String;
 use itertools::{concat, zip};
 use ariadne::{Label, Report, ReportBuilder, ReportKind};
 use lc3_isa::{Addr, SignedWord, Word};
 use crate::lexer::{LiteralValue, Opcode};
-use crate::parser::{File, Instruction, Operand, Program, WithErrData};
+use crate::parser::{File, get_first, get_result, Instruction, Operand, Program, result, WithErrData};
 use crate::{Span, Spanned};
 
 type ErrorList = Vec<Spanned<Error>>;
@@ -68,6 +69,8 @@ pub fn report(spanned_error: Spanned<Error>) -> Report {
 }
 
 use OperandType::*;
+use crate::assembler::get_orig;
+
 #[derive(Clone)]
 pub enum OperandType {
     Register,
@@ -218,22 +221,13 @@ fn min_unsigned_width(n: i32) -> u8 {
     width as u8
 }
 
-enum InvalidSymbolReason {
-    InvalidOrig,
-    PriorInvalidInstruction { estimated_addr: Addr },
-    Duplicated,
-    OutOfBounds,
-}
-
-type SymbolTableValue = Result<Addr, InvalidSymbolReason>;
-
 
 #[derive(Default)]
-struct ParseErrors {
+struct ParseErrorsAnalysis {
     errors: ErrorList
 }
 
-impl ParseErrors {
+impl ParseErrorsAnalysis {
     fn new() -> Self {
         Default::default()
     }
@@ -243,7 +237,7 @@ impl ParseErrors {
     }
 }
 
-impl MutVisitor for ParseErrors {
+impl MutVisitor for ParseErrorsAnalysis {
     fn enter_program_error(&mut self, span: &Span) {
         self.push_error(BadProgram, span);
     }
@@ -269,20 +263,20 @@ impl MutVisitor for ParseErrors {
 
 
 #[derive(Default)]
-struct DuplicateLabels {
+struct DuplicateLabelsAnalysis {
     errors: ErrorList,
     labels: HashMap<String, Vec<Span>>,
 }
 
-impl DuplicateLabels {
+impl DuplicateLabelsAnalysis {
     fn new() -> Self {
         Default::default()
     }
 }
 
-impl MutVisitor for DuplicateLabels {
+impl MutVisitor for DuplicateLabelsAnalysis {
     fn exit_file(&mut self, _file: &File) {
-        let DuplicateLabels { errors, labels } = self;
+        let DuplicateLabelsAnalysis { errors, labels } = self;
         labels.iter()
             .filter(|(_, occurrences)| occurrences.len() > 1)
             .map(|(label, occurrences)|
@@ -301,13 +295,147 @@ impl MutVisitor for DuplicateLabels {
 }
 
 
+type RoughAddr = u32;
+
+#[derive(Debug)]
+enum InvalidSymbolError {
+    InvalidOrig { estimated_addr: RoughAddr },
+    PriorInvalidInstruction { estimated_addr: RoughAddr },
+    Duplicated,
+    OutOfBounds,
+}
+
+type SymbolTableValue = Result<Addr, InvalidSymbolError>;
+
+#[derive(Debug)]
+enum SymbolTableState {
+    Valid,
+    InvalidOrig,
+    InvalidInstruction,
+}
+
+impl Default for SymbolTableState {
+    fn default() -> Self {
+        SymbolTableState::Valid
+    }
+}
+
+enum AddressesOccupiedError {
+    BadOpcode,
+    BadOperand
+}
+
+impl Instruction {
+    fn get_label(&self) -> Option<&String> {
+        self.label.as_ref()
+            .and_then(|res| get_result(res).as_ref().ok())
+    }
+
+    fn get_first_operand(&self) -> Option<&Operand> {
+        get_result(&self.operands).as_ref().ok()
+            .and_then(|ops| get_first(ops))
+    }
+
+    fn addresses_occupied(&self) -> Result<Addr, AddressesOccupiedError> {
+        match get_result(&self.opcode) {
+            Err(()) => Err(AddressesOccupiedError::BadOpcode),
+            Ok(oc) => match oc {
+                Opcode::Stringz =>
+                    self.get_first_operand()
+                        .and_then(|op| op.clone().get_string())
+                        .ok_or(AddressesOccupiedError::BadOperand)
+                        .map(|s| s.len() as Addr),
+                Opcode::Blkw =>
+                    self.get_first_operand()
+                        .and_then(|op| op.clone().get_unqualified_number_value())
+                        .ok_or(AddressesOccupiedError::BadOperand),
+                _ => Ok(1)
+            }
+        }
+    }
+}
+
+type SymbolTable = HashMap<String, SymbolTableValue>;
+
+#[derive(Debug, Default)]
+struct SymbolTableAnalysis {
+    location_counter: RoughAddr,
+    state: SymbolTableState,
+    symbol_table: SymbolTable,
+}
+
+impl SymbolTableAnalysis {
+    fn new() -> Self {
+        Default::default()
+    }
+
+    fn invalidate_state(&mut self, state: SymbolTableState) {
+        if let SymbolTableState::Valid = self.state {
+            self.state = state;
+        }
+    }
+}
+
+const ORIG_ERROR_STARTING_ADDRESS_ESTIMATE: RoughAddr = 0x3000;
+const INSTRUCTION_ERROR_ADDRESSES_OCCUPIED_ESTIMATE: RoughAddr = 1;
+
+impl MutVisitor for SymbolTableAnalysis {
+    fn enter_orig_error(&mut self, _span: &Span) {
+        self.location_counter = ORIG_ERROR_STARTING_ADDRESS_ESTIMATE;
+        self.invalidate_state(SymbolTableState::InvalidOrig);
+    }
+
+    fn enter_orig(&mut self, orig: &Vec<WithErrData<Operand>>, _span: &Span) {
+        self.location_counter = get_first(orig)
+            .and_then(|op| Word::try_from(op.clone()).map(|w| w as RoughAddr).ok())
+            .unwrap_or_else(| | {
+                self.state = SymbolTableState::InvalidOrig;
+                ORIG_ERROR_STARTING_ADDRESS_ESTIMATE
+            });
+    }
+
+    fn enter_instruction_error(&mut self, _span: &Span) {
+        self.location_counter += INSTRUCTION_ERROR_ADDRESSES_OCCUPIED_ESTIMATE;
+        self.invalidate_state(SymbolTableState::InvalidInstruction);
+    }
+
+    fn enter_instruction(&mut self, instruction: &Instruction, _span: &Span) {
+        if let Some(label) = instruction.get_label() {
+            self.symbol_table.entry(label.clone())
+                .and_modify(|e| *e = Err(InvalidSymbolError::Duplicated))
+                .or_insert(
+                    match self.state {
+                        SymbolTableState::Valid =>
+                            self.location_counter.try_into()
+                                .map_err(|_| InvalidSymbolError::OutOfBounds),
+                        SymbolTableState::InvalidOrig =>
+                            Err(InvalidSymbolError::InvalidOrig {
+                                estimated_addr: self.location_counter
+                            }),
+                        SymbolTableState::InvalidInstruction =>
+                            Err(InvalidSymbolError::PriorInvalidInstruction {
+                                estimated_addr: self.location_counter
+                            }),
+                    }
+                );
+        }
+        self.location_counter += instruction.addresses_occupied()
+            .unwrap_or_else(|_| {
+                self.state = SymbolTableState::InvalidInstruction;
+                INSTRUCTION_ERROR_ADDRESSES_OCCUPIED_ESTIMATE as Addr
+            }) as RoughAddr;
+    }
+}
+
+
+
 #[derive(Default)]
-struct OperandTypes {
+struct OperandTypesAnalysis {
     errors: ErrorList,
     expected_operands: Option<Vec<OperandType>>
 }
 
-impl OperandTypes {
+impl OperandTypesAnalysis {
     fn new() -> Self {
         Default::default()
     }
@@ -317,7 +445,7 @@ fn orig_expected_operands() -> Vec<OperandType> {
     vec![OperandType::signed_or_unsigned_number(16)] // TODO: Disallow signed?
 }
 
-impl MutVisitor for OperandTypes {
+impl MutVisitor for OperandTypesAnalysis {
     fn enter_orig(&mut self, orig: &Vec<WithErrData<Operand>>, span: &Span) {
         self.expected_operands = Some(orig_expected_operands());
         self.enter_operands(orig, span);
@@ -496,14 +624,17 @@ trait MutVisitor {
 }
 
 pub fn validate(file: &File) -> ErrorList {
-    let mut pe = ParseErrors::new();
+    let mut pe = ParseErrorsAnalysis::new();
     visit(&mut pe, file);
 
-    let mut dl = DuplicateLabels::new();
+    let mut dl = DuplicateLabelsAnalysis::new();
     visit(&mut dl, file);
 
-    let mut ot = OperandTypes::new();
+    let mut ot = OperandTypesAnalysis::new();
     visit(&mut ot, file);
+
+    let mut st = SymbolTableAnalysis::new();
+    visit(&mut st, file);
 
     concat([
       pe.errors,

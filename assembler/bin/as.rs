@@ -88,7 +88,7 @@ fn as_() {
 
             let objects =
                 file.programs.into_iter()
-                    .map(|program| assemble(program.0.unwrap()));
+                    .map(|program| assemble(program.0.expect("Found invalid object.")).expect("Failed to assemble object."));
 
             let mem = link(objects, background);
 

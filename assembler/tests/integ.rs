@@ -277,7 +277,7 @@ fn test(input: &str, orig: usize, expected_mem: &[Word]) {
     let (mut file, span) = maybe_file.expect("parsing failed");
     assert_eq!(1, file.programs.len(), "parsed unexpected number of programs: {}", file.programs.len());
     let program = file.programs.remove(0).0.expect("parse error in program");
-    let object = assembler::assemble(program);
+    let object = assembler::assemble(program).expect("assembly failed");
 
     let mem = linker::link([object], None);
 

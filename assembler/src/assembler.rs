@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use std::num::{ParseIntError, TryFromIntError};
 use lc3_isa::{Addr, Reg, SignedWord, Word};
 use crate::lexer::{ConditionCodes, LiteralValue, Opcode};
-use crate::parser::Operand;
+use crate::parser::{Operand, result, try_map, try_result};
 use crate::parser;
 use crate::parser::{Program, WithErrData};
 
@@ -20,11 +20,10 @@ impl TryFrom<Operand> for Sr2OrImm5 {
     type Error = ();
 
     fn try_from(value: Operand) -> Result<Self, Self::Error> {
-        Reg::try_from(value.clone())
+        value.clone().try_into()
             .map(Sr2OrImm5::Sr2)
             .or_else(|_|
-                LiteralValue::try_from(value)
-                    .unwrap_try_into()
+                value.try_into()
                     .map(Sr2OrImm5::Imm5)
                     .map_err(|_| ()))
     }
@@ -34,36 +33,42 @@ impl TryFrom<Operand> for PcOffset {
     type Error = ();
 
     fn try_from(value: Operand) -> Result<Self, Self::Error> {
-        LiteralValue::try_from(value.clone())
-            .map(|lv| {
-                let sw = lv.try_into().unwrap();
-                PcOffset::Number(sw)
-            })
-            .or_else(|_| Ok(PcOffset::Label(value.label())))
+        value.clone().try_into()
+            .map(PcOffset::Number)
+            .or_else(|_|
+                value.get_label()
+                    .ok_or(())
+                    .map(PcOffset::Label))
     }
 }
 
 impl TryFrom<Operand> for SignedWord {
-    type Error = TryFromIntError;
+    type Error = ();
 
     fn try_from(value: Operand) -> Result<Self, Self::Error> {
-        LiteralValue::try_from(value).unwrap_try_into()
+        LiteralValue::try_from(value)?
+            .try_into()
+            .map_err(|_| ())
     }
 }
 
 impl TryFrom<Operand> for Word {
-    type Error = TryFromIntError;
+    type Error = ();
 
     fn try_from(value: Operand) -> Result<Self, Self::Error> {
-        LiteralValue::try_from(value).unwrap_try_into()
+        LiteralValue::try_from(value)?
+            .try_into()
+            .map_err(|_| ())
     }
 }
 
 impl TryFrom<Operand> for u8 {
-    type Error = TryFromIntError;
+    type Error = ();
 
     fn try_from(value: Operand) -> Result<Self, Self::Error> {
-        LiteralValue::try_from(value).unwrap_try_into()
+        LiteralValue::try_from(value)?
+            .try_into()
+            .map_err(|_| ())
     }
 }
 
@@ -71,10 +76,12 @@ impl TryFrom<Operand> for FillValue {
     type Error = ();
 
     fn try_from(value: Operand) -> Result<Self, Self::Error> {
-        LiteralValue::try_from(value.clone())
-            .unwrap_try_into()
+        value.clone().try_into()
             .map(FillValue::Number)
-            .or_else(|_| Ok(FillValue::Label(value.label())))
+            .or_else(|_|
+                value.get_label()
+                    .ok_or(())
+                    .map(FillValue::Label))
     }
 }
 
@@ -117,32 +124,12 @@ pub(crate) enum Instruction {
 
 impl Instruction {
     fn addresses_occupied(&self) -> Addr {
-        use Instruction::*;
-
         match self {
-            Add { .. }
-            | And { .. }
-            | Br { .. }
-            | Jmp { .. }
-            | Jsr { .. }
-            | Jsrr { .. }
-            | Ld { .. }
-            | Ldi { .. }
-            | Ldr { .. }
-            | Lea { .. }
-            | Not { .. }
-            | Ret
-            | Rti
-            | St { .. }
-            | Sti { .. }
-            | Str { .. }
-            | Trap { .. }
-            | Fill { .. } => 1,
-
-            Blkw { size } => *size,
+            Instruction::Blkw { size } => *size,
 
             // +1 is to count the null-terminator
-            Stringz { string } => (string.len() + 1) as Addr, // TODO: correct for escape characters
+            Instruction::Stringz { string } => (string.len() + 1) as Addr,
+            _ => 1,
         }
     }
 }
@@ -159,61 +146,6 @@ pub(crate) enum ObjectWord {
     UnlinkedInstruction(Instruction),
 }
 
-fn unwrap<T>(v: WithErrData<T>) -> T {
-    v.0.unwrap()
-}
-
-trait UnwrapTryFrom<T> where
-    Self: Sized
-{
-    type Error;
-
-    fn unwrap_try_from(v: T) -> Result<Self, Self::Error>;
-}
-
-trait UnwrapTryInto<T> {
-    type Error;
-
-    fn unwrap_try_into(self) -> Result<T, Self::Error>;
-}
-
-impl<T, U, E> UnwrapTryInto<T> for U where
-    T: UnwrapTryFrom<U, Error=E>
-{
-    type Error = E;
-
-    fn unwrap_try_into(self) -> Result<T, Self::Error> {
-        T::unwrap_try_from(self)
-    }
-}
-
-impl<T, U, E> UnwrapTryFrom<WithErrData<T>> for U where
-    U: TryFrom<T, Error=E>
-{
-    type Error = E;
-
-    fn unwrap_try_from(v: WithErrData<T>) -> Result<Self, Self::Error> {
-        unwrap(v).try_into()
-    }
-}
-
-impl<T, U, E, E2: Debug> UnwrapTryFrom<Result<T, E2>> for U where
-    U: TryFrom<T, Error=E>
-{
-    type Error = E;
-
-    fn unwrap_try_from(v: Result<T, E2>) -> Result<Self, Self::Error> {
-        v.unwrap().try_into()
-    }
-}
-
-fn unwrap_into<T, U, E>(maybe_v: Option<T>) -> U where
-    E: Debug,
-    U: UnwrapTryFrom<T, Error=E>
-{
-    maybe_v.unwrap().unwrap_try_into().unwrap()
-}
-
 
 impl TryFrom<parser::Instruction> for Instruction {
     type Error = ();
@@ -221,97 +153,97 @@ impl TryFrom<parser::Instruction> for Instruction {
     fn try_from(i: parser::Instruction) -> Result<Self, Self::Error> {
 
         let parser::Instruction { opcode: raw_opcode, operands: raw_operands, .. } = i;
-        let operands = unwrap(raw_operands);
-        match unwrap(raw_opcode) {
+        let operands = result(raw_operands)?;
+        match result(raw_opcode)? {
             Opcode::Add => {
                 let mut os = operands.into_iter();
-                let dr = unwrap_into(os.next());
-                let sr1 = unwrap_into(os.next());
-                let sr2_or_imm5 = unwrap_into(os.next());
+                let dr = try_map(os.next())?;
+                let sr1 = try_map(os.next())?;
+                let sr2_or_imm5 = try_map(os.next())?;
                 Ok(Instruction::Add { dr, sr1, sr2_or_imm5 })
             }
             Opcode::And => {
                 let mut os = operands.into_iter();
-                let dr = unwrap_into(os.next());
-                let sr1 = unwrap_into(os.next());
-                let sr2_or_imm5 = unwrap_into(os.next());
+                let dr = try_map(os.next())?;
+                let sr1 = try_map(os.next())?;
+                let sr2_or_imm5 = try_map(os.next())?;
                 Ok(Instruction::And { dr, sr1, sr2_or_imm5 })
             }
             Opcode::Br(cond_codes) => {
                 let mut os = operands.into_iter();
-                let pc_offset9 = unwrap_into(os.next());
+                let pc_offset9 = try_map(os.next())?;
                 Ok(Instruction::Br { cond_codes, pc_offset9 })
             }
             Opcode::Jmp => {
                 let mut os = operands.into_iter();
-                let base = unwrap_into(os.next());
+                let base = try_map(os.next())?;
                 Ok(Instruction::Jmp { base })
             }
             Opcode::Jsr => {
                 let mut os = operands.into_iter();
-                let pc_offset11 = unwrap_into(os.next());
+                let pc_offset11 = try_map(os.next())?;
                 Ok(Instruction::Jsr { pc_offset11 })
             }
             Opcode::Jsrr => {
                 let mut os = operands.into_iter();
-                let base = unwrap_into(os.next());
+                let base = try_map(os.next())?;
                 Ok(Instruction::Jsrr { base })
             }
             Opcode::Ld => {
                 let mut os = operands.into_iter();
-                let dr = unwrap_into(os.next());
-                let pc_offset9 = unwrap_into(os.next());
+                let dr = try_map(os.next())?;
+                let pc_offset9 = try_map(os.next())?;
                 Ok(Instruction::Ld { dr, pc_offset9 })
             }
             Opcode::Ldi => {
                 let mut os = operands.into_iter();
-                let dr = unwrap_into(os.next());
-                let pc_offset9 = unwrap_into(os.next());
+                let dr = try_map(os.next())?;
+                let pc_offset9 = try_map(os.next())?;
                 Ok(Instruction::Ldi { dr, pc_offset9 })
             }
             Opcode::Ldr => {
                 let mut os = operands.into_iter();
-                let dr = unwrap_into(os.next());
-                let base = unwrap_into(os.next());
-                let offset6 = unwrap_into(os.next());
+                let dr = try_map(os.next())?;
+                let base = try_map(os.next())?;
+                let offset6 = try_map(os.next())?;
                 Ok(Instruction::Ldr { dr, base, offset6 })
             }
             Opcode::Lea => {
                 let mut os = operands.into_iter();
-                let dr = unwrap_into(os.next());
-                let pc_offset9 = unwrap_into(os.next());
+                let dr = try_map(os.next())?;
+                let pc_offset9 = try_map(os.next())?;
                 Ok(Instruction::Lea { dr, pc_offset9 })
             }
             Opcode::Not => {
                 let mut os = operands.into_iter();
-                let dr = unwrap_into(os.next());
-                let sr = unwrap_into(os.next());
+                let dr = try_map(os.next())?;
+                let sr = try_map(os.next())?;
                 Ok(Instruction::Not { dr, sr })
             }
             Opcode::Ret => Ok(Instruction::Ret),
             Opcode::Rti => Ok(Instruction::Rti),
             Opcode::St => {
                 let mut os = operands.into_iter();
-                let sr = unwrap_into(os.next());
-                let pc_offset9 = unwrap_into(os.next());
+                let sr = try_map(os.next())?;
+                let pc_offset9 = try_map(os.next())?;
                 Ok(Instruction::St { sr, pc_offset9 })
             }
             Opcode::Sti => {
                 let mut os = operands.into_iter();
-                let sr = unwrap_into(os.next());
-                let pc_offset9 = unwrap_into(os.next());
+                let sr = try_map(os.next())?;
+                let pc_offset9 = try_map(os.next())?;
                 Ok(Instruction::Sti { sr, pc_offset9 })
             }
             Opcode::Str => {
                 let mut os = operands.into_iter();
-                let sr = unwrap_into(os.next());
-                let base = unwrap_into(os.next());
-                let offset6 = unwrap_into(os.next());
+                let sr = try_map(os.next())?;
+                let base = try_map(os.next())?;
+                let offset6 = try_map(os.next())?;
                 Ok(Instruction::Str { sr, base, offset6 })
             }
             Opcode::Trap => {
                 let mut os = operands.into_iter();
-                let trap_vec = unwrap_into(os.next());
+                let trap_vec = try_map(os.next())?;
                 Ok(Instruction::Trap { trap_vec })
             }
 
@@ -320,17 +252,17 @@ impl TryFrom<parser::Instruction> for Instruction {
 
             Opcode::Fill => {
                 let mut os = operands.into_iter();
-                let value = unwrap_into(os.next());
+                let value = try_map(os.next())?;
                 Ok(Instruction::Fill { value })
             }
             Opcode::Blkw => {
                 let mut os = operands.into_iter();
-                let size = unwrap(os.next().unwrap()).unqualified_number_value();
+                let size = try_result(os.next())?.get_unqualified_number_value().ok_or(())?;
                 Ok(Instruction::Blkw { size })
             }
             Opcode::Stringz => {
                 let mut os = operands.into_iter();
-                let string = unwrap(os.next().unwrap()).string();
+                let string = try_result(os.next())?.get_string().ok_or(())?;
                 Ok(Instruction::Stringz { string })
             }
 
@@ -364,7 +296,7 @@ fn calculate_offset(location_counter: &Addr, label_address: &Addr) -> SignedWord
     (la - (lc + 1)) as SignedWord
 }
 
-pub(crate) fn try_assemble(symbol_table: &SymbolTable, location_counter: &Addr, instruction: Instruction) -> AssemblyResult {
+pub(crate) fn assemble_instruction(symbol_table: &SymbolTable, location_counter: &Addr, instruction: Instruction) -> AssemblyResult {
     use AssemblyResult::*;
     use ObjectWord::*;
 
@@ -502,7 +434,7 @@ pub(crate) fn try_assemble(symbol_table: &SymbolTable, location_counter: &Addr, 
                 .collect()),
         Instruction::Stringz { string } => {
             let mut chars = string.chars()
-                    .map(|c| Value(c as Word)) // TODO: correct for escape chars
+                    .map(|c| Value(c as Word))
                     .collect::<Vec<_>>();
             chars.push(Value(0x00)); // null-terminator
             MultipleObjectWords(chars)
@@ -510,25 +442,25 @@ pub(crate) fn try_assemble(symbol_table: &SymbolTable, location_counter: &Addr, 
     }
 }
 
-fn first_pass(origin: Addr, instructions: Vec<WithErrData<parser::Instruction>>) -> (Vec<Instruction>, SymbolTable) {
+fn first_pass(origin: Addr, instructions: Vec<WithErrData<parser::Instruction>>) -> Result<(Vec<Instruction>, SymbolTable), ()> {
     let mut symbol_table = HashMap::new();
     let mut words = Vec::new();
     let mut location_counter = origin;
 
     for raw_instruction in instructions.into_iter() {
-        let parser_instruction = unwrap(raw_instruction);
+        let parser_instruction = result(raw_instruction)?;
         if let Some(l) = parser_instruction.label.clone() { // TODO: label not needed for conversion to Instruction; consider changing to TryFrom<(Opcode, Operands)> to avoid clone
-            symbol_table.insert(unwrap(l), location_counter);
+            symbol_table.insert(result(l)?, location_counter);
         };
 
-        let instruction: Instruction = parser_instruction.try_into().unwrap();
+        let instruction: Instruction = parser_instruction.try_into()?;
         let addresses_used = instruction.addresses_occupied();
         words.push(instruction);
 
         location_counter += addresses_used;
     }
 
-    (words, symbol_table)
+    Ok((words, symbol_table))
 }
 
 fn second_pass(symbol_table: SymbolTable, origin: Addr, instructions: Vec<Instruction>) -> Object {
@@ -537,7 +469,7 @@ fn second_pass(symbol_table: SymbolTable, origin: Addr, instructions: Vec<Instru
 
     for instruction in instructions.into_iter() {
         let addresses_used = instruction.addresses_occupied();
-        match try_assemble(&symbol_table, &location_counter, instruction) {
+        match assemble_instruction(&symbol_table, &location_counter, instruction) {
             AssemblyResult::SingleObjectWord(wd) => { words.push(wd); }
             AssemblyResult::MultipleObjectWords(wds) => { words.extend(wds); }
         }
@@ -547,11 +479,14 @@ fn second_pass(symbol_table: SymbolTable, origin: Addr, instructions: Vec<Instru
     Object { origin, symbol_table, words }
 }
 
-pub fn assemble(program: Program) -> Object {
-    let Program { orig: raw_orig_operands, instructions: parser_instructions, .. } = program;
-    let orig_operand = unwrap(raw_orig_operands).remove(0);
-    let origin = LiteralValue::unwrap_try_from(orig_operand).unwrap_try_into().unwrap();
+pub(crate) fn get_orig(orig_operands: WithErrData<Vec<WithErrData<Operand>>>) -> Result<Addr, ()> {
+    let orig_operand = result(orig_operands)?.remove(0);
+    result(orig_operand)?.try_into()
+}
 
-    let (instructions, symbol_table) = first_pass(origin, parser_instructions);
-    second_pass(symbol_table, origin, instructions)
+pub fn assemble(program: Program) -> Result<Object, ()> {
+    let Program { orig, instructions: parser_instructions, .. } = program;
+    let origin = get_orig(orig)?;
+    let (instructions, symbol_table) = first_pass(origin, parser_instructions)?;
+    Ok(second_pass(symbol_table, origin, instructions))
 }
