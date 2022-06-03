@@ -290,17 +290,19 @@ pub(crate) enum AssemblyResult {
     MultipleObjectWords(Vec<ObjectWord>),
 }
 
-fn calculate_offset(location_counter: &Addr, label_address: &Addr) -> SignedWord {
-    let lc = *location_counter as i32;
-    let la = *label_address as i32;
-    (la - (lc + 1)) as SignedWord
+fn calculate_addr_offset(location_counter: &Addr, label_address: &Addr) -> Result<SignedWord, TryFromIntError> {
+    calculate_offset(*location_counter as i32, *label_address as i32)
 }
 
-pub(crate) fn assemble_instruction(symbol_table: &SymbolTable, location_counter: &Addr, instruction: Instruction) -> AssemblyResult {
+pub(crate) fn calculate_offset(location_counter: i32, label_address: i32) -> Result<SignedWord, TryFromIntError> {
+    (label_address - (location_counter + 1)).try_into()
+}
+
+pub(crate) fn assemble_instruction(symbol_table: &SymbolTable, location_counter: &Addr, instruction: Instruction) -> Result<AssemblyResult, TryFromIntError> {
     use AssemblyResult::*;
     use ObjectWord::*;
 
-    match instruction {
+    let res = match instruction {
         Instruction::Add { dr, sr1, sr2_or_imm5 } => {
             let word =
                 match sr2_or_imm5 {
@@ -323,7 +325,7 @@ pub(crate) fn assemble_instruction(symbol_table: &SymbolTable, location_counter:
                 PcOffset::Label(label) =>
                     match symbol_table.get(&label) {
                         Some(addr) => {
-                            let offset = calculate_offset(location_counter, addr);
+                            let offset = calculate_addr_offset(location_counter, addr)?;
                             SingleObjectWord(Value(lc3_isa::Instruction::new_br(n, z, p, offset).into()))
                         }
                         None => SingleObjectWord(UnlinkedInstruction(Instruction::Br { cond_codes: ConditionCodes { n, z, p }, pc_offset9: PcOffset::Label(label) })),
@@ -337,7 +339,7 @@ pub(crate) fn assemble_instruction(symbol_table: &SymbolTable, location_counter:
                 PcOffset::Label(label) =>
                     match symbol_table.get(&label) {
                         Some(addr) => {
-                            let offset = calculate_offset(location_counter, addr);
+                            let offset = calculate_addr_offset(location_counter, addr)?;
                             SingleObjectWord(Value(lc3_isa::Instruction::new_jsr(offset).into()))
                         }
                         None => SingleObjectWord(UnlinkedInstruction(Instruction::Jsr { pc_offset11: PcOffset::Label(label) })),
@@ -351,7 +353,7 @@ pub(crate) fn assemble_instruction(symbol_table: &SymbolTable, location_counter:
                 PcOffset::Label(label) =>
                     match symbol_table.get(&label) {
                         Some(addr) => {
-                            let offset = calculate_offset(location_counter, addr);
+                            let offset = calculate_addr_offset(location_counter, addr)?;
                             SingleObjectWord(Value(lc3_isa::Instruction::new_ld(dr, offset).into()))
                         }
                         None => SingleObjectWord(UnlinkedInstruction(Instruction::Ld { dr, pc_offset9: PcOffset::Label(label)})),
@@ -364,7 +366,7 @@ pub(crate) fn assemble_instruction(symbol_table: &SymbolTable, location_counter:
                 PcOffset::Label(label) =>
                     match symbol_table.get(&label) {
                         Some(addr) => {
-                            let offset = calculate_offset(location_counter, addr);
+                            let offset = calculate_addr_offset(location_counter, addr)?;
                             SingleObjectWord(Value(lc3_isa::Instruction::new_ldi(dr, offset).into()))
                         }
                         None => SingleObjectWord(UnlinkedInstruction(Instruction::Ldi { dr, pc_offset9: PcOffset::Label(label)})),
@@ -378,7 +380,7 @@ pub(crate) fn assemble_instruction(symbol_table: &SymbolTable, location_counter:
                 PcOffset::Label(label) =>
                     match symbol_table.get(&label) {
                         Some(addr) => {
-                            let offset = calculate_offset(location_counter, addr);
+                            let offset = calculate_addr_offset(location_counter, addr)?;
                             SingleObjectWord(Value(lc3_isa::Instruction::new_lea(dr, offset).into()))
                         }
                         None => SingleObjectWord(UnlinkedInstruction(Instruction::Lea { dr, pc_offset9: PcOffset::Label(label)})),
@@ -394,7 +396,7 @@ pub(crate) fn assemble_instruction(symbol_table: &SymbolTable, location_counter:
                 PcOffset::Label(label) =>
                     match symbol_table.get(&label) {
                         Some(addr) => {
-                            let offset = calculate_offset(location_counter, addr);
+                            let offset = calculate_addr_offset(location_counter, addr)?;
                             SingleObjectWord(Value(lc3_isa::Instruction::new_st(sr, offset).into()))
                         }
                         None => SingleObjectWord(UnlinkedInstruction(Instruction::St { sr, pc_offset9: PcOffset::Label(label)})),
@@ -407,7 +409,7 @@ pub(crate) fn assemble_instruction(symbol_table: &SymbolTable, location_counter:
                 PcOffset::Label(label) =>
                     match symbol_table.get(&label) {
                         Some(addr) => {
-                            let offset = calculate_offset(location_counter, addr);
+                            let offset = calculate_addr_offset(location_counter, addr)?;
                             SingleObjectWord(Value(lc3_isa::Instruction::new_sti(sr, offset).into()))
                         }
                         None => SingleObjectWord(UnlinkedInstruction(Instruction::Sti { sr, pc_offset9: PcOffset::Label(label)})),
@@ -439,7 +441,8 @@ pub(crate) fn assemble_instruction(symbol_table: &SymbolTable, location_counter:
             chars.push(Value(0x00)); // null-terminator
             MultipleObjectWords(chars)
         }
-    }
+    };
+    Ok(res)
 }
 
 fn first_pass(origin: Addr, instructions: Vec<WithErrData<parser::Instruction>>) -> Result<(Vec<Instruction>, SymbolTable), ()> {
@@ -463,20 +466,20 @@ fn first_pass(origin: Addr, instructions: Vec<WithErrData<parser::Instruction>>)
     Ok((words, symbol_table))
 }
 
-fn second_pass(symbol_table: SymbolTable, origin: Addr, instructions: Vec<Instruction>) -> Object {
+fn second_pass(symbol_table: SymbolTable, origin: Addr, instructions: Vec<Instruction>) -> Result<Object, TryFromIntError> {
     let mut location_counter = origin;
     let mut words = Vec::new();
 
     for instruction in instructions.into_iter() {
         let addresses_used = instruction.addresses_occupied();
-        match assemble_instruction(&symbol_table, &location_counter, instruction) {
+        match assemble_instruction(&symbol_table, &location_counter, instruction)? {
             AssemblyResult::SingleObjectWord(wd) => { words.push(wd); }
             AssemblyResult::MultipleObjectWords(wds) => { words.extend(wds); }
         }
         location_counter += addresses_used;
     }
 
-    Object { origin, symbol_table, words }
+    Ok(Object { origin, symbol_table, words })
 }
 
 pub(crate) fn get_orig(orig_operands: WithErrData<Vec<WithErrData<Operand>>>) -> Result<Addr, ()> {
@@ -488,5 +491,5 @@ pub fn assemble(program: Program) -> Result<Object, ()> {
     let Program { orig, instructions: parser_instructions, .. } = program;
     let origin = get_orig(orig)?;
     let (instructions, symbol_table) = first_pass(origin, parser_instructions)?;
-    Ok(second_pass(symbol_table, origin, instructions))
+    second_pass(symbol_table, origin, instructions).map_err(|_| ())
 }

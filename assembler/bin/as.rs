@@ -90,7 +90,7 @@ fn as_() {
                 file.programs.into_iter()
                     .map(|program| assemble(program.0.expect("Found invalid object.")).expect("Failed to assemble object."));
 
-            let mem = link(objects, background);
+            let mem = link(objects, background).expect("linking failed");
 
             let mut output_path = path.clone();
             output_path.set_extension(MEM_DUMP_FILE_EXTENSION);

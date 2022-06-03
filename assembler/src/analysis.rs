@@ -1,12 +1,13 @@
+use std::cmp::min;
 use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
-use std::fmt::{Display, format, Formatter};
+use std::fmt::{Debug, Display, format, Formatter};
 use std::string::String;
 use itertools::{concat, zip};
 use ariadne::{Label, Report, ReportBuilder, ReportKind};
 use lc3_isa::{Addr, SignedWord, Word};
 use crate::lexer::{LiteralValue, Opcode};
-use crate::parser::{File, get_first, get_result, Instruction, Operand, Program, result, WithErrData};
+use crate::parser::{File, get, get_result, Instruction, Operand, Program, result, WithErrData};
 use crate::{Span, Spanned};
 
 type ErrorList = Vec<Spanned<Error>>;
@@ -22,6 +23,14 @@ pub enum Error {
     WrongNumberOfOperands { expected: usize, actual: usize },
     OperandTypeMismatch { expected: OperandType, actual: OperandType },
     DuplicateLabel { label: String, occurrences: Vec<Span>, },
+    InvalidLabelReference { label: String, reason: InvalidReferenceReason },
+    LabelTooDistant { label: String, width: u8, est_ref_pos: RoughAddr, est_label_pos: RoughAddr },
+}
+
+pub enum InvalidReferenceReason {
+    Undefined,
+    Duplicated,
+    OutOfBounds,
 }
 
 impl Error {
@@ -38,7 +47,21 @@ impl Error {
             OperandTypeMismatch { expected, actual } =>
                 format!("wrong operand type; expected {}, found: {}", expected, actual),
             DuplicateLabel { label, .. } =>
-                format!("same label used for multiple locations: {}", label)
+                format!("same label used for multiple locations: {}", label),
+            InvalidLabelReference { label, reason } => {
+                let reason_str = match reason {
+                    InvalidReferenceReason::Undefined => "not previously defined",
+                    InvalidReferenceReason::Duplicated => "defined in multiple locations",
+                    InvalidReferenceReason::OutOfBounds => "defined at invalid address",
+                };
+                format!("reference to label {} invalid: {}", label, reason_str)
+            }
+            LabelTooDistant { label, width, est_ref_pos, est_label_pos } => {
+                format!("label {} at {:#0label_pos_width$X} referenced at {:#0ref_pos_width$X}; too distant, cannot represent in available bits: {}",
+                        label, est_label_pos, est_ref_pos, width,
+                        label_pos_width = min(4, min_signed_width(*est_ref_pos) as usize),
+                        ref_pos_width = min(4, min_signed_width(*est_label_pos) as usize),)
+            }
         }
     }
 }
@@ -69,7 +92,7 @@ pub fn report(spanned_error: Spanned<Error>) -> Report {
 }
 
 use OperandType::*;
-use crate::assembler::get_orig;
+use crate::assembler::{calculate_offset, get_orig};
 
 #[derive(Clone)]
 pub enum OperandType {
@@ -295,7 +318,7 @@ impl MutVisitor for DuplicateLabelsAnalysis {
 }
 
 
-type RoughAddr = u32;
+type RoughAddr = i32;
 
 #[derive(Debug)]
 enum InvalidSymbolError {
@@ -333,7 +356,7 @@ impl Instruction {
 
     fn get_first_operand(&self) -> Option<&Operand> {
         get_result(&self.operands).as_ref().ok()
-            .and_then(|ops| get_first(ops))
+            .and_then(|ops| get(ops, 0))
     }
 
     fn addresses_occupied(&self) -> Result<Addr, AddressesOccupiedError> {
@@ -386,10 +409,10 @@ impl MutVisitor for SymbolTableAnalysis {
     }
 
     fn enter_orig(&mut self, orig: &Vec<WithErrData<Operand>>, _span: &Span) {
-        self.location_counter = get_first(orig)
+        self.location_counter = get(orig, 0)
             .and_then(|op| Word::try_from(op.clone()).map(|w| w as RoughAddr).ok())
             .unwrap_or_else(| | {
-                self.state = SymbolTableState::InvalidOrig;
+                self.invalidate_state(SymbolTableState::InvalidOrig);
                 ORIG_ERROR_STARTING_ADDRESS_ESTIMATE
             });
     }
@@ -399,34 +422,163 @@ impl MutVisitor for SymbolTableAnalysis {
         self.invalidate_state(SymbolTableState::InvalidInstruction);
     }
 
-    fn enter_instruction(&mut self, instruction: &Instruction, _span: &Span) {
-        if let Some(label) = instruction.get_label() {
-            self.symbol_table.entry(label.clone())
-                .and_modify(|e| *e = Err(InvalidSymbolError::Duplicated))
-                .or_insert(
-                    match self.state {
-                        SymbolTableState::Valid =>
-                            self.location_counter.try_into()
-                                .map_err(|_| InvalidSymbolError::OutOfBounds),
-                        SymbolTableState::InvalidOrig =>
-                            Err(InvalidSymbolError::InvalidOrig {
-                                estimated_addr: self.location_counter
-                            }),
-                        SymbolTableState::InvalidInstruction =>
-                            Err(InvalidSymbolError::PriorInvalidInstruction {
-                                estimated_addr: self.location_counter
-                            }),
-                    }
-                );
-        }
+    fn exit_instruction(&mut self, instruction: &Instruction, _span: &Span) {
         self.location_counter += instruction.addresses_occupied()
             .unwrap_or_else(|_| {
                 self.state = SymbolTableState::InvalidInstruction;
                 INSTRUCTION_ERROR_ADDRESSES_OCCUPIED_ESTIMATE as Addr
             }) as RoughAddr;
     }
+
+    fn enter_label(&mut self, label: &String, _span: &Span) {
+        self.symbol_table.entry(label.clone())
+            .and_modify(|e| *e = Err(InvalidSymbolError::Duplicated))
+            .or_insert(
+                match self.state {
+                    SymbolTableState::Valid =>
+                        self.location_counter.try_into()
+                            .map_err(|_| InvalidSymbolError::OutOfBounds),
+                    SymbolTableState::InvalidOrig =>
+                        Err(InvalidSymbolError::InvalidOrig {
+                            estimated_addr: self.location_counter
+                        }),
+                    SymbolTableState::InvalidInstruction =>
+                        Err(InvalidSymbolError::PriorInvalidInstruction {
+                            estimated_addr: self.location_counter
+                        }),
+                }
+            );
+    }
 }
 
+
+struct ExpectedLabel {
+    width: u8,
+    position: usize
+}
+
+struct LabelOffsetBoundsAnalysis<'a> {
+    errors: ErrorList,
+    symbol_table: &'a SymbolTable,
+    location_counter: RoughAddr,
+    expected_label: Option<ExpectedLabel>
+}
+
+impl<'a> LabelOffsetBoundsAnalysis<'a> {
+    fn new(symbol_table: &'a SymbolTable) -> Self {
+        Self {
+            errors: Default::default(),
+            symbol_table,
+            location_counter: Default::default(),
+            expected_label: Default::default(),
+        }
+    }
+
+    fn check_offset(&mut self, label: &String, span: &Span, width: u8, label_addr: RoughAddr) {
+        match calculate_offset(self.location_counter, label_addr) {
+            Err(_) => {
+                // TODO: make more precise. This case shouldn't be possible unless one of the estimated addresses is far out of bounds.
+                self.errors.push(
+                    (InvalidLabelReference {
+                        label: label.clone(),
+                        reason: InvalidReferenceReason::OutOfBounds
+                    }, span.clone()));
+            }
+            Ok(offset) => {
+                if min_signed_width(offset as i32) > width {
+                    self.errors.push(
+                        (LabelTooDistant {
+                            label: label.clone(),
+                            width,
+                            est_ref_pos: self.location_counter,
+                            est_label_pos: label_addr,
+                        }, span.clone()))
+                }
+            }
+        }
+    }
+}
+
+impl<'a> MutVisitor for LabelOffsetBoundsAnalysis<'a> {
+    fn enter_orig_error(&mut self, _span: &Span) {
+        self.location_counter = ORIG_ERROR_STARTING_ADDRESS_ESTIMATE;
+    }
+
+    fn enter_orig(&mut self, orig: &Vec<WithErrData<Operand>>, _span: &Span) {
+        self.location_counter = get(orig, 0)
+            .and_then(|op| Word::try_from(op.clone()).map(|w| w as RoughAddr).ok())
+            .unwrap_or(ORIG_ERROR_STARTING_ADDRESS_ESTIMATE);
+    }
+
+    fn enter_instruction_error(&mut self, _span: &Span) {
+        self.location_counter += INSTRUCTION_ERROR_ADDRESSES_OCCUPIED_ESTIMATE;
+    }
+
+    fn exit_instruction(&mut self, instruction: &Instruction, _span: &Span) {
+        self.location_counter += instruction.addresses_occupied()
+            .unwrap_or(INSTRUCTION_ERROR_ADDRESSES_OCCUPIED_ESTIMATE as Addr)
+            as RoughAddr;
+    }
+
+    fn enter_opcode_error(&mut self, _span: &Span) {
+        self.expected_label = None;
+    }
+
+    fn enter_opcode(&mut self, opcode: &Opcode, _span: &Span) {
+        use Opcode::*;
+        self.expected_label =
+            match opcode {
+                Ld | Ldi | Lea
+                | St | Sti     => Some(ExpectedLabel { width:  9, position: 1 }),
+                Br(_)          => Some(ExpectedLabel { width:  9, position: 0 }),
+                Jsr            => Some(ExpectedLabel { width: 11, position: 0 }),
+                Fill           => Some(ExpectedLabel { width: 16, position: 0 }),
+                _ => None,
+            }
+    }
+
+    fn enter_operands(&mut self, operands: &Vec<WithErrData<Operand>>, _span: &Span) {
+        if let Some(ExpectedLabel { width, position }) = &self.expected_label {
+            if let Some((Ok(Operand::Label(label)), op_span)) = operands.get(*position) {
+                match self.symbol_table.get(label) {
+                    None => {
+                        self.errors.push(
+                            (InvalidLabelReference {
+                                     label: label.clone(),
+                                     reason: InvalidReferenceReason::Undefined
+                                 }, op_span.clone()));
+                    }
+                    Some(stv) => match stv {
+                        Ok(addr) => {
+                            self.check_offset(label, op_span, *width, *addr as RoughAddr);
+                        }
+                        Err(ste) => match ste {
+                            InvalidSymbolError::InvalidOrig { estimated_addr }
+                            | InvalidSymbolError::PriorInvalidInstruction { estimated_addr } => {
+                                self.check_offset(label, op_span, *width, *estimated_addr);
+                            }
+                            InvalidSymbolError::Duplicated => {
+                                self.errors.push(
+                                    (InvalidLabelReference {
+                                        label: label.clone(),
+                                        reason: InvalidReferenceReason::Duplicated
+                                    }, op_span.clone()));
+                            }
+                            InvalidSymbolError::OutOfBounds => {
+                                self.errors.push(
+                                    (InvalidLabelReference {
+                                        label: label.clone(),
+                                        reason: InvalidReferenceReason::OutOfBounds
+                                    }, op_span.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+}
 
 
 #[derive(Default)]
@@ -609,6 +761,7 @@ trait MutVisitor {
 
     fn enter_instruction_error(&mut self, _span: &Span) {}
     fn enter_instruction(&mut self, _instruction: &Instruction, _span: &Span) {}
+    fn exit_instruction(&mut self, _instruction: &Instruction, _span: &Span) {}
 
     fn enter_label_error(&mut self, _span: &Span) {}
     fn enter_label(&mut self, _label: &String, _span: &Span) {}
@@ -636,10 +789,14 @@ pub fn validate(file: &File) -> ErrorList {
     let mut st = SymbolTableAnalysis::new();
     visit(&mut st, file);
 
+    let mut lob = LabelOffsetBoundsAnalysis::new(&st.symbol_table);
+    visit(&mut lob, file);
+
     concat([
       pe.errors,
       dl.errors,
-      ot.errors
+      ot.errors,
+      lob.errors,
     ])
 }
 

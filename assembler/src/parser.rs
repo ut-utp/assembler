@@ -10,8 +10,8 @@ use crate::lexer::{LiteralValue, Opcode, Token};
 
 pub(crate) type WithErrData<T> = Spanned<Result<T, ()>>;
 
-pub(crate) fn get_first<T>(v: &Vec<WithErrData<T>>) -> Option<&T> {
-    v.get(0)
+pub(crate) fn get<T>(v: &Vec<WithErrData<T>>, i: usize) -> Option<&T> {
+    v.get(i)
         .and_then(|res| get_result(res).as_ref().ok())
 }
 

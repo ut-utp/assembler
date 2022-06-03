@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::num::{ParseIntError, TryFromIntError};
 use chumsky::chain::Chain;
 use chumsky::Parser;
 use lc3_isa::util::MemoryDump;
@@ -19,7 +20,7 @@ fn layer_object(image: &mut [Word; ADDR_SPACE_SIZE_IN_WORDS], object: LinkedObje
     }
 }
 
-fn link_object(symbol_table: &SymbolTable, object: Object) -> LinkedObject {
+fn link_object(symbol_table: &SymbolTable, object: Object) -> Result<LinkedObject, TryFromIntError> {
     let mut words = Vec::new();
     let Object { origin, words: object_words, .. } = object;
     let mut location_counter = origin;
@@ -30,7 +31,7 @@ fn link_object(symbol_table: &SymbolTable, object: Object) -> LinkedObject {
                 location_counter += 1;
             },
             ObjectWord::UnlinkedInstruction(instruction) =>
-                match assemble_instruction(&symbol_table, &location_counter, instruction) {
+                match assemble_instruction(&symbol_table, &location_counter, instruction)? {
                     AssemblyResult::SingleObjectWord(word) => match word {
                         ObjectWord::Value(word) => {
                             words.push(word);
@@ -51,10 +52,10 @@ fn link_object(symbol_table: &SymbolTable, object: Object) -> LinkedObject {
                 }
         }
     }
-    LinkedObject { origin, words }
+    Ok(LinkedObject { origin, words })
 }
 
-pub fn link(objects: impl IntoIterator<Item=Object>, background: Option<MemoryDump>) -> MemoryDump {
+pub fn link(objects: impl IntoIterator<Item=Object>, background: Option<MemoryDump>) -> Result<MemoryDump, TryFromIntError> {
     let objects = objects.into_iter().collect::<Vec<_>>();
 
     let mut symbol_table = HashMap::new();
@@ -70,9 +71,9 @@ pub fn link(objects: impl IntoIterator<Item=Object>, background: Option<MemoryDu
             None => [0; ADDR_SPACE_SIZE_IN_WORDS]
         };
     for object in objects {
-        let linked_object = link_object(&symbol_table, object);
+        let linked_object = link_object(&symbol_table, object)?;
         layer_object(&mut image, linked_object);
     }
 
-    image.into()
+    Ok(image.into())
 }
