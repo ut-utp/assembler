@@ -1,4 +1,4 @@
-use std::cmp::min;
+use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{Debug, Display, format, Formatter};
@@ -24,7 +24,7 @@ pub enum Error {
     OperandTypeMismatch { expected: OperandType, actual: OperandType },
     DuplicateLabel { label: String, occurrences: Vec<Span>, },
     InvalidLabelReference { label: String, reason: InvalidReferenceReason },
-    LabelTooDistant { label: String, width: u8, est_ref_pos: RoughAddr, est_label_pos: RoughAddr },
+    LabelTooDistant { label: String, width: u8, est_ref_pos: RoughAddr, est_label_pos: RoughAddr, offset: SignedWord },
 }
 
 pub enum InvalidReferenceReason {
@@ -56,15 +56,23 @@ impl Error {
                 };
                 format!("reference to label {} invalid: {}", label, reason_str)
             }
-            LabelTooDistant { label, width, est_ref_pos, est_label_pos } => {
-                format!("label {} at {:#0label_pos_width$X} referenced at {:#0ref_pos_width$X}; too distant, cannot represent in available bits: {}",
-                        label, est_label_pos, est_ref_pos, width,
-                        label_pos_width = min(4, min_signed_width(*est_ref_pos) as usize),
-                        ref_pos_width = min(4, min_signed_width(*est_label_pos) as usize),)
+            LabelTooDistant { label, width, est_ref_pos, est_label_pos, offset } => {
+                format!("label {} at {:#0label_pos_width$X} referenced at {:#0ref_pos_width$X}; too distant, cannot represent offset of {} in available bits: {}",
+                        label, est_label_pos, est_ref_pos, offset, width,
+                        // TODO: Rust '#X' formatter automatically fixes width to multiple of 4... find or implement workaround to control sign-extension; for example, for 9-bit signed offsets, we would want to display 0x2FF, not 0xFEFF. Showing as decimal for now.
+                        label_pos_width = max(4, min_signed_hex_digits_required(*est_ref_pos) as usize),
+                        ref_pos_width = max(4, min_signed_hex_digits_required(*est_label_pos) as usize),)
             }
         }
     }
 }
+
+fn min_signed_hex_digits_required(n: i32) -> u8 {
+    let bin_digits = min_signed_width(n);
+    let extra = if bin_digits % 4 == 0 { 0 } else { 1 };
+    bin_digits / 4 + extra
+}
+
 
 pub fn report(spanned_error: Spanned<Error>) -> Report {
     let (error, span) = spanned_error;
@@ -491,6 +499,7 @@ impl<'a> LabelOffsetBoundsAnalysis<'a> {
                             label: label.clone(),
                             width,
                             est_ref_pos: self.location_counter,
+                            offset,
                             est_label_pos: label_addr,
                         }, span.clone()))
                 }
