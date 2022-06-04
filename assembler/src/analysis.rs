@@ -708,6 +708,8 @@ fn visit_instruction(v: &mut impl MutVisitor, instruction: &WithErrData<Instruct
             }
             visit_opcode(v, opcode);
             visit_operands(v, operands);
+
+            v.exit_instruction(i, span);
         }
     }
 }

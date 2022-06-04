@@ -158,7 +158,6 @@ fn instruction(leniency: LeniencyLevel) -> impl Parser<Token, WithErrData<Instru
                 opcode: o,
                 operands: os,
             };
-            println!("{:?}", instruction);
             (Ok(instruction), span)
         })
         // Pseudo-recovery strategy -- take everything until the end of the line. Consider replacing with `recover_via` if merged into `chumsky`
