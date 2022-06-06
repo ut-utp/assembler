@@ -362,7 +362,7 @@ impl Instruction {
                     self.get_first_operand()
                         .and_then(|op| op.clone().get_string())
                         .ok_or(AddressesOccupiedError::BadOperand)
-                        .map(|s| s.len() as Addr),
+                        .map(|s| (s.len() + 1) as Addr),
                 Opcode::Blkw =>
                     self.get_first_operand()
                         .and_then(|op| op.clone().get_unqualified_number_value())
