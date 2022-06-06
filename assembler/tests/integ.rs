@@ -196,7 +196,7 @@ mod single_instruction {
                     neg_imm: ($operator.to_string() + " R2 #-1").as_str()   => (($opcode << 12) + 0x5FF),
                     max_imm: ($operator.to_string() + " R3 #255").as_str()  => (($opcode << 12) + 0x6FF),
                     min_imm: ($operator.to_string() + " R4 #-256").as_str() => (($opcode << 12) + 0x900),
-                    // hex_imm: ($operator.to_string() + " R5 xA").as_str()    => (($opcode << 12) + 0xA0A), TODO: We currently assume an argument not starting in # is a label. Allow hex literals?
+                    hex_imm: ($operator.to_string() + " R5 xA").as_str()    => (($opcode << 12) + 0xA0A),
                     r5:      ($operator.to_string() + " R5 #0").as_str()    => (($opcode << 12) + 0xA00),
                     r6:      ($operator.to_string() + " R6 #0").as_str()    => (($opcode << 12) + 0xC00),
                     r7:      ($operator.to_string() + " R7 #0").as_str()    => (($opcode << 12) + 0xE00),
@@ -219,7 +219,7 @@ mod single_instruction {
         neg_imm: "JSR #-1"    => 0x4FFF,
         max_imm: "JSR #1023"  => 0x4BFF,
         min_imm: "JSR #-1024" => 0x4C00,
-        // hex_imm: "JSR xA"     => 0x480A, // TODO: We currently assume an argument not starting in # is a label. Allow hex literals?
+        hex_imm: "JSR xA"     => 0x480A,
     }
 
     mod pseudo_ops {
