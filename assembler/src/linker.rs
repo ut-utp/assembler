@@ -55,7 +55,7 @@ fn link_object(symbol_table: &SymbolTable, object: Object) -> Result<LinkedObjec
     Ok(LinkedObject { origin, words })
 }
 
-pub fn link(objects: impl IntoIterator<Item=Object>, background: Option<MemoryDump>) -> Result<MemoryDump, TryFromIntError> {
+pub fn link(objects: impl IntoIterator<Item=Object>, overlay_on_os: bool) -> Result<MemoryDump, TryFromIntError> {
     let objects = objects.into_iter().collect::<Vec<_>>();
 
     let mut symbol_table = HashMap::new();
@@ -66,9 +66,15 @@ pub fn link(objects: impl IntoIterator<Item=Object>, background: Option<MemoryDu
     }
 
     let mut image =
-        match background {
-            Some(mem) => mem.0,
-            None => [0; ADDR_SPACE_SIZE_IN_WORDS]
+        if overlay_on_os {
+            let mut os = lc3_os::OS_IMAGE.clone().0;
+            os[lc3_isa::USER_PROGRAM_START_ADDR as usize] =
+                objects.get(0)
+                    .expect("Found no objects in file; could not find origin.")
+                    .origin; // TODO: fail gracefully
+            os
+        } else {
+            [0; ADDR_SPACE_SIZE_IN_WORDS]
         };
     for object in objects {
         let linked_object = link_object(&symbol_table, object)?;

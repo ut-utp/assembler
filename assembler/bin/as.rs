@@ -84,13 +84,11 @@ fn as_() {
         if args.check {
             println!("{}: No errors found.", path.to_str().unwrap());
         } else {
-            let background = if args.no_os { None } else { Some(lc3_os::OS_IMAGE.clone()) };
-
             let objects =
                 file.programs.into_iter()
                     .map(|program| assemble(program.0.expect("Found invalid object.")).expect("Failed to assemble object."));
 
-            let mem = link(objects, background).expect("linking failed");
+            let mem = link(objects, !args.no_os).expect("linking failed");
 
             let mut output_path = path.clone();
             output_path.set_extension(MEM_DUMP_FILE_EXTENSION);
