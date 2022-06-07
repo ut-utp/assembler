@@ -2,8 +2,9 @@ use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{Debug, Display, format, Formatter};
+use std::ops::Range;
 use std::string::String;
-use itertools::{concat, zip};
+use itertools::{concat, Itertools, zip};
 use ariadne::{Label, Report, ReportBuilder, ReportKind};
 use lc3_isa::{Addr, SignedWord, Word};
 use crate::lexer::{LiteralValue, Opcode};
@@ -25,6 +26,7 @@ pub enum Error {
     DuplicateLabel { label: String, occurrences: Vec<Span>, },
     InvalidLabelReference { label: String, reason: InvalidReferenceReason },
     LabelTooDistant { label: String, width: u8, est_ref_pos: RoughAddr, est_label_pos: RoughAddr, offset: SignedWord },
+    ObjectsOverlap { placement1: ObjectPlacement, placement2: ObjectPlacement }
 }
 
 pub enum InvalidReferenceReason {
@@ -34,6 +36,16 @@ pub enum InvalidReferenceReason {
 }
 
 impl Error {
+    fn objects_overlap(p1: ObjectPlacement, p2: ObjectPlacement) -> Self {
+        let (placement1, placement2) =
+            if p1.span_in_memory.start <= p2.span_in_memory.start {
+                (p1, p2)
+            } else {
+                (p2, p1)
+            };
+        ObjectsOverlap { placement1, placement2 }
+    }
+
     fn message(&self) -> String {
         match self {
             BadProgram     => String::from("invalid program"),
@@ -63,6 +75,20 @@ impl Error {
                         label_pos_width = max(4, min_signed_hex_digits_required(*est_ref_pos) as usize),
                         ref_pos_width = max(4, min_signed_hex_digits_required(*est_label_pos) as usize),)
             }
+            ObjectsOverlap { placement1, placement2 } => {
+                format!("object {} in file occupying [{:#0o1s_width$X}, {:#0o1e_width$X}) overlaps object {} occupying [{:#0o2s_width$X}, {:#0o2e_width$X})",
+                    placement1.position_in_file,
+                    placement1.span_in_memory.start,
+                    placement1.span_in_memory.end,
+                    placement2.position_in_file,
+                    placement2.span_in_memory.start,
+                    placement2.span_in_memory.end,
+                    o1s_width = max(4, min_signed_hex_digits_required(placement1.span_in_memory.start) as usize),
+                    o1e_width = max(4, min_signed_hex_digits_required(placement1.span_in_memory.end) as usize),
+                    o2s_width = max(4, min_signed_hex_digits_required(placement2.span_in_memory.start) as usize),
+                    o2e_width = max(4, min_signed_hex_digits_required(placement2.span_in_memory.end) as usize),
+                )
+            }
         }
     }
 }
@@ -91,6 +117,12 @@ pub fn report(spanned_error: Spanned<Error>) -> Report {
                 };
                 r = r.with_label(Label::new(occurrence).with_message(label_message))
             }
+        }
+        ObjectsOverlap { placement1, placement2 } => {
+            r = r.with_label(Label::new(placement1.span_in_file)
+                    .with_message("end of this object overlaps the other"))
+                 .with_label(Label::new(placement2.span_in_file)
+                    .with_message("start of this object overlaps the other"));
         }
         _ => {
             r = r.with_label(Label::new(span).with_message("here"));
@@ -561,7 +593,7 @@ fn orig_expected_operands() -> Vec<OperandType> {
 }
 
 impl MutVisitor for OperandTypesAnalysis {
-    fn enter_orig(&mut self, orig: &Vec<WithErrData<Operand>>, span: &Span) {
+    fn enter_orig(&mut self, orig: &Vec<WithErrData<Operand>>, span: &Span, _location: &LocationCounter) {
         self.expected_operands = Some(orig_expected_operands());
         self.check_operands(orig, span);
     }
@@ -600,6 +632,60 @@ impl MutVisitor for OperandTypesAnalysis {
         self.check_operands(operands, span);
     }
 }
+
+
+struct ObjectPlacementAnalysis {
+    errors: ErrorList,
+    last_start: RoughAddr,
+    object_index: usize,
+    object_spans: Vec<ObjectPlacement>,
+}
+
+#[derive(Clone)]
+pub struct ObjectPlacement {
+    position_in_file: usize,
+    span_in_file: Span,
+    span_in_memory: Range<RoughAddr>,
+}
+
+impl ObjectPlacementAnalysis {
+    fn new() -> Self {
+        Self {
+            errors: Default::default(),
+            last_start: ORIG_ERROR_STARTING_ADDRESS_ESTIMATE,
+            object_index: 0,
+            object_spans: Default::default(),
+        }
+    }
+}
+
+impl MutVisitor for ObjectPlacementAnalysis {
+    fn exit_file(&mut self, _file: &File) {
+        self.object_spans.sort_unstable_by_key(|span| span.span_in_memory.start);
+        for (op1, op2) in self.object_spans.iter().tuple_windows() {
+            if op2.span_in_memory.start < op1.span_in_memory.end {
+                self.errors.push((
+                    Error::objects_overlap(op1.clone(), op2.clone()),
+                    0..0)); // TODO: refactor to avoid dummy span
+            }
+        }
+    }
+
+    fn exit_program(&mut self, _program: &Program, span: &Span, location: &LocationCounter) {
+        self.object_spans.push(
+            ObjectPlacement {
+                position_in_file: self.object_index,
+                span_in_file: span.clone(),
+                span_in_memory: self.last_start..location.value
+            });
+        self.object_index += 1;
+    }
+
+    fn exit_orig(&mut self, _orig: &Vec<WithErrData<Operand>>, _span: &Span, location: &LocationCounter) {
+        self.last_start = location.value;
+    }
+}
+
 
 struct LocationCounter {
     value: RoughAddr,
@@ -659,6 +745,8 @@ fn visit_program(v: &mut impl MutVisitor, program: &WithErrData<Program>) {
             for instruction in instructions {
                 visit_instruction(v, instruction, &mut location_counter);
             }
+
+            v.exit_program(p, span, &mut location_counter);
         }
     }
 }
@@ -679,10 +767,12 @@ fn visit_orig(v: &mut impl MutVisitor, orig: &WithErrData<Vec<WithErrData<Operan
                     ORIG_ERROR_STARTING_ADDRESS_ESTIMATE
                 });
 
-            v.enter_orig( o, span);
+            v.enter_orig( o, span, location_counter);
             for operand in o {
                 visit_operand(v, operand, location_counter);
             }
+
+            v.exit_orig(o, span, location_counter);
         }
     }
 }
@@ -759,9 +849,11 @@ trait MutVisitor {
 
     fn enter_program_error(&mut self, _span: &Span) {}
     fn enter_program(&mut self, _program: &Program, _span: &Span) {}
+    fn exit_program(&mut self, _program: &Program, _span: &Span, _location: &LocationCounter) {}
 
     fn enter_orig_error(&mut self, _span: &Span) {}
-    fn enter_orig(&mut self, _orig: &Vec<WithErrData<Operand>>, _span: &Span) {}
+    fn enter_orig(&mut self, _orig: &Vec<WithErrData<Operand>>, _span: &Span, _location: &LocationCounter) {}
+    fn exit_orig(&mut self, _orig: &Vec<WithErrData<Operand>>, _span: &Span, _location: &LocationCounter) {}
 
     fn enter_instruction_error(&mut self, _span: &Span, _location: &LocationCounter) {}
     fn enter_instruction(&mut self, _instruction: &Instruction, _span: &Span, _location: &LocationCounter) {}
@@ -796,11 +888,15 @@ pub fn validate(file: &File) -> ErrorList {
     let mut lob = LabelOffsetBoundsAnalysis::new(&st.symbol_table);
     visit(&mut lob, file);
 
+    let mut op = ObjectPlacementAnalysis::new();
+    visit(&mut op, file);
+
     concat([
       pe.errors,
       dl.errors,
       ot.errors,
       lob.errors,
+      op.errors,
     ])
 }
 
