@@ -68,7 +68,7 @@ pub fn link(objects: impl IntoIterator<Item=Object>, overlay_on_os: bool) -> Res
     let mut image =
         if overlay_on_os {
             let mut os = lc3_os::OS_IMAGE.clone().0;
-            os[lc3_isa::USER_PROGRAM_START_ADDR as usize] =
+            os[lc3_os::USER_PROG_START_ADDR as usize] =
                 objects.get(0)
                     .expect("Found no objects in file; could not find origin.")
                     .origin; // TODO: fail gracefully
