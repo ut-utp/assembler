@@ -119,10 +119,16 @@ pub fn report(spanned_error: Spanned<Error>) -> Report {
             }
         }
         ObjectsOverlap { placement1, placement2 } => {
-            r = r.with_label(Label::new(placement1.span_in_file)
-                    .with_message("end of this object overlaps the other"))
-                 .with_label(Label::new(placement2.span_in_file)
-                    .with_message("start of this object overlaps the other"));
+            let (first, first_pos_text, second, second_pos_text) =
+                if placement1.position_in_file < placement2.position_in_file {
+                    (placement1, "end", placement2, "start")
+                } else {
+                    (placement2, "start", placement1, "end")
+                };
+            r = r.with_label(Label::new(first.span_in_file)
+                    .with_message(format!("{} of this object overlaps the other", first_pos_text)))
+                 .with_label(Label::new(second.span_in_file)
+                    .with_message(format!("{} of this object overlaps the other", second_pos_text)));
         }
         _ => {
             r = r.with_label(Label::new(span).with_message("here"));
