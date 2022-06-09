@@ -62,16 +62,28 @@ fn as_() {
 
         let leniency = if args.strict { LeniencyLevel::Strict } else { LeniencyLevel::Lenient };
 
-        let string = fs::read_to_string(path.clone()).unwrap();
+        let string = fs::read_to_string(path.clone()).expect(&format!("Could not read file at: {:?}", path));
         let src = string.as_str();
 
-        let (maybe_tokens, lex_errs) = lex(src, leniency);
-        let tokens = maybe_tokens.expect("lexing failed");
+        let (maybe_tokens, lex_data, lex_errs) = lex(src, leniency);
+        if let None = maybe_tokens {
+            for lex_err in lex_errs {
+                println!("Lex error: {}", lex_err);
+            }
+            continue;
+        }
+        let tokens = maybe_tokens.expect("Lexing failed, but produced no errors.");
 
         let (maybe_file, parse_errs) = parse(src, tokens, leniency);
-        let (mut file, span) = maybe_file.expect("parsing failed");
+        if let None = maybe_file {
+            for parse_err in parse_errs {
+                println!("{}", parse_err);
+            }
+            continue;
+        }
+        let spanned_file = maybe_file.expect("Parsing failed, but produced no errors.");
 
-        let errors = validate(&file);
+        let errors = validate(&lex_data, &spanned_file);
 
         if !errors.is_empty() {
             for error in errors {
@@ -84,6 +96,7 @@ fn as_() {
         if args.check {
             println!("{}: No errors found.", path.to_str().unwrap());
         } else {
+            let mut file = spanned_file.0;
             let objects =
                 file.programs.into_iter()
                     .map(|program| assemble(program.0.expect("Found invalid object.")).expect("Failed to assemble object."));

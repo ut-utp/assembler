@@ -7,7 +7,7 @@ use std::string::String;
 use itertools::{concat, Itertools, zip};
 use ariadne::{Label, Report, ReportBuilder, ReportKind};
 use lc3_isa::{Addr, SignedWord, Word};
-use crate::lexer::{LiteralValue, Opcode};
+use crate::lexer::{LexData, LiteralValue, Opcode};
 use crate::parser::{File, get, get_result, Instruction, Operand, Program, result, WithErrData};
 use crate::{Span, Spanned};
 
@@ -26,7 +26,10 @@ pub enum Error {
     DuplicateLabel { label: String, occurrences: Vec<Span>, },
     InvalidLabelReference { label: String, reason: InvalidReferenceReason },
     LabelTooDistant { label: String, width: u8, est_ref_pos: RoughAddr, est_label_pos: RoughAddr, offset: SignedWord },
-    ObjectsOverlap { placement1: ObjectPlacement, placement2: ObjectPlacement }
+    ObjectsOverlap { placement1: ObjectPlacement, placement2: ObjectPlacement },
+    NoTokens,
+    NoOrig,
+    NoEnd,
 }
 
 pub enum InvalidReferenceReason {
@@ -89,6 +92,15 @@ impl Error {
                     o2e_width = max(4, min_signed_hex_digits_required(placement2.span_in_memory.end) as usize),
                 )
             }
+            NoTokens => {
+                "no LC-3 assembly in file".to_string()
+            }
+            NoOrig => {
+                "no .ORIG pseudo-op in file".to_string()
+            }
+            NoEnd => {
+                "no .END pseudo-op in file".to_string()
+            }
         }
     }
 }
@@ -130,6 +142,7 @@ pub fn report(spanned_error: Spanned<Error>) -> Report {
                  .with_label(Label::new(second.span_in_file)
                     .with_message(format!("{} of this object overlaps the other", second_pos_text)));
         }
+        NoTokens => {},
         _ => {
             r = r.with_label(Label::new(span).with_message("here"));
         }
@@ -878,7 +891,28 @@ trait MutVisitor {
     fn enter_operand(&mut self, _operand: &Operand, _span: &Span, _location: &LocationCounter) {}
 }
 
-pub fn validate(file: &File) -> ErrorList {
+
+fn analyze_lex_data(lex_data: &LexData, file_span: &Span) -> ErrorList {
+    let mut errors = Vec::new();
+    if lex_data.no_tokens {
+        errors.push((NoTokens, 0..0))
+    } else {
+        if !lex_data.orig_present {
+            errors.push((NoOrig, file_span.start..file_span.start));
+        }
+        if !lex_data.end_present {
+            errors.push((NoEnd, file_span.end..file_span.end));
+        }
+    }
+    errors
+}
+
+
+pub fn validate(lex_data: &LexData, file_spanned: &Spanned<File>) -> ErrorList {
+    let (file, file_span) = file_spanned;
+
+    let errors_from_lex_data = analyze_lex_data(&lex_data, file_span);
+
     let mut pe = ParseErrorsAnalysis::new();
     visit(&mut pe, file);
 
@@ -898,11 +932,12 @@ pub fn validate(file: &File) -> ErrorList {
     visit(&mut op, file);
 
     concat([
-      pe.errors,
-      dl.errors,
-      ot.errors,
-      lob.errors,
-      op.errors,
+        errors_from_lex_data,
+        pe.errors,
+        dl.errors,
+        ot.errors,
+        lob.errors,
+        op.errors,
     ])
 }
 

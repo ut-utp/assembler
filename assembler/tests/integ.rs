@@ -270,11 +270,11 @@ mod single_instruction {
 }
 
 fn test(input: &str, orig: usize, expected_mem: &[Word]) {
-    let (maybe_tokens, lex_errs) = lexer::lex(input, LeniencyLevel::Lenient);
+    let (maybe_tokens, _, _) = lexer::lex(input, LeniencyLevel::Lenient);
     let tokens = maybe_tokens.expect("lexing failed");
 
-    let (maybe_file, parse_errs) = parser::parse(input, tokens, LeniencyLevel::Lenient);
-    let (mut file, span) = maybe_file.expect("parsing failed");
+    let (maybe_file, _) = parser::parse(input, tokens, LeniencyLevel::Lenient);
+    let (mut file, _) = maybe_file.expect("parsing failed");
     assert_eq!(1, file.programs.len(), "parsed unexpected number of programs: {}", file.programs.len());
     let program = file.programs.remove(0).0.expect("parse error in program");
     let object = assembler::assemble(program).expect("assembly failed");

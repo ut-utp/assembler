@@ -1,6 +1,7 @@
 use chumsky::prelude::*;
 use lc3_isa::{Addr, Reg, SignedWord, Word};
 use std::convert::{TryFrom, TryInto};
+use std::fmt::{Display, Formatter};
 use std::num::TryFromIntError;
 use chumsky::Stream;
 
@@ -23,6 +24,12 @@ pub enum Token {
     Comment,
 
     Invalid,
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -106,6 +113,7 @@ pub enum Opcode {
     Halt,
 }
 
+#[derive(Debug)]
 enum CaseSensitivePassResult {
     CaseInsensitiveSource(String),
     CaseSensitiveToken(Token),
@@ -338,8 +346,8 @@ fn case_sensitive_pass(source: &str) -> (Option<Vec<Spanned<CaseSensitivePassRes
     case_sensitive_tokens().parse_recovery_verbose(source)
 }
 
-fn case_insensitive_pass(case_sensitive_pass_results: Vec<Spanned<CaseSensitivePassResult>>, leniency: LeniencyLevel) -> (Option<Vec<Spanned<Token>>>, Vec<Simple<char>>) {
-    let mut toks: Option<Vec<Spanned<Token>>> = None;
+fn case_insensitive_pass(case_sensitive_pass_results: Vec<Spanned<CaseSensitivePassResult>>, leniency: LeniencyLevel) -> (Vec<Spanned<Token>>, Vec<Simple<char>>) {
+    let mut toks: Vec<Spanned<Token>> = Vec::new();
     let mut errors = Vec::new();
 
     for (cspr, span) in case_sensitive_pass_results {
@@ -357,13 +365,14 @@ fn case_insensitive_pass(case_sensitive_pass_results: Vec<Spanned<CaseSensitiveP
                 let stream = Stream::from_iter(span.end..(span.end + 1), spanned_char_stream);
                 let (maybe_tokens, lex_errors) = tokens(leniency).parse_recovery_verbose(stream);
 
+                // TODO: confirm that fail case is impossible, or decide on how to handle. `recover_with` should prevent failure
                 if let Some(ts) = maybe_tokens {
-                    toks.get_or_insert(Vec::new()).extend(ts);
+                    toks.extend(ts);
                 }
                 errors.extend(lex_errors);
             }
             CaseSensitivePassResult::CaseSensitiveToken(t) => {
-                toks.get_or_insert(Vec::new()).push((t, span));
+                toks.push((t, span));
             }
         }
     }
@@ -371,17 +380,33 @@ fn case_insensitive_pass(case_sensitive_pass_results: Vec<Spanned<CaseSensitiveP
     (toks, errors)
 }
 
-pub fn lex(source: &str, leniency: LeniencyLevel) -> (Option<Vec<Spanned<Token>>>, Vec<Simple<char>>) {
+pub struct LexData {
+    pub(crate) no_tokens: bool,
+    pub(crate) orig_present: bool,
+    pub(crate) end_present: bool,
+}
+
+fn contains_token(tokens: &Option<Vec<Spanned<Token>>>, token: Token) -> bool {
+    match tokens {
+        None => false,
+        Some(ts) => ts.iter().any(|t| t.0 == token)
+    }
+}
+
+pub fn lex(source: &str, leniency: LeniencyLevel) -> (Option<Vec<Spanned<Token>>>, LexData, Vec<Simple<char>>) {
     let (maybe_csprs, mut errors) = case_sensitive_pass(source);
     let tokens =
-        if let Some(csprs) = maybe_csprs {
-            let (maybe_tokens, cip_errors) = case_insensitive_pass(csprs, leniency);
-            errors.extend(cip_errors);
-            maybe_tokens
-        } else {
-            None
-        };
-    (tokens, errors)
+        maybe_csprs
+            .map(|csprs| {
+                let (maybe_tokens, cip_errors) = case_insensitive_pass(csprs, leniency);
+                errors.extend(cip_errors);
+                maybe_tokens
+            });
+    let no_tokens = if let Some(ts) = &tokens { ts.is_empty() } else { true };
+    let orig_present = contains_token(&tokens, Token::Opcode(Opcode::Orig));
+    let end_present = contains_token(&tokens, Token::End);
+    let lex_data = LexData { no_tokens, orig_present, end_present };
+    (tokens, lex_data, errors)
 }
 
 
@@ -395,7 +420,7 @@ mod tests {
     #[test]
     fn lone_error() {
         let source = "#OOPS";
-        let (tokens, _) = lex(source, LeniencyLevel::Lenient);
+        let (tokens, _, _) = lex(source, LeniencyLevel::Lenient);
         assert_eq!(
             Some(vec![
                 (Invalid, 0..5),
@@ -406,7 +431,7 @@ mod tests {
     #[test]
     fn error_in_context() {
         let source = "ADD R0, R0, #OOPS; <- error";
-        let (tokens, _) = lex(source, LeniencyLevel::Lenient);
+        let (tokens, _, _) = lex(source, LeniencyLevel::Lenient);
         assert_eq!(
             Some(vec![
                 (Opcode(Add),   0.. 3),

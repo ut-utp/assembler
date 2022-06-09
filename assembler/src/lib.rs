@@ -27,7 +27,7 @@ mod tests {
     #[test]
     fn simple() {
         let src = ".ORIG x3000;\nLABEL ADD R0, R0, #7000\n.end";
-        let (tokens, lex_errs) = lexer::lex(src, LeniencyLevel::Lenient);
+        let (tokens, _, lex_errs) = lexer::lex(src, LeniencyLevel::Lenient);
         println!("{:?}", tokens);
         println!("{:?}", lex_errs);
 

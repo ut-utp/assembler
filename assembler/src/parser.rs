@@ -1,5 +1,7 @@
 use std::convert::{TryFrom, TryInto};
+use chumsky::combinator::Repeated;
 use chumsky::prelude::*;
+use chumsky::primitive::NoneOf;
 use chumsky::recovery::SkipUntil;
 use chumsky::Stream;
 use lc3_isa::{Reg, Word};
@@ -173,7 +175,11 @@ fn comments_and_newlines() -> impl Parser<Token, (), Error = Simple<Token>> {
         .ignored()
 }
 
-fn program(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<Program>, Error = Simple<Token>> {
+fn everything_until_orig() -> Repeated<NoneOf<Token, Token, Simple<Token>>> {
+    none_of(Token::Opcode(Opcode::Orig)).repeated()
+}
+
+fn program(leniency: LeniencyLevel) -> impl Parser<Token, WithErrData<Program>, Error = Simple<Token>> {
     let orig =
         just(Token::Opcode(Opcode::Orig))
             .ignore_then(operands(leniency));
@@ -187,8 +193,11 @@ fn program(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<Program>, Erro
         )
         .then_ignore(just::<_, Token, _>(Token::End))
         .map_with_span(|(orig, instructions), span| {
-            (Program { orig, instructions }, span)
+            (Ok(Program { orig, instructions }), span)
         })
+        // Pseudo-recovery strategy -- take everything until next .ORIG
+        .or(any().then(everything_until_orig())
+            .map_with_span(|_, span| (Err(()), span)))
 }
 
 #[derive(Debug)]
@@ -198,12 +207,11 @@ pub struct File {
 }
 
 fn file(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<File>, Error = Simple<Token>> {
-    none_of(Token::Opcode(Opcode::Orig)).repeated()
+    everything_until_orig()
         .map_with_span(|toks, span| (toks, span))
         .then(
             program(leniency)
-                .map(|(p, span)| (Ok(p), span))
-                .separated_by(none_of(Token::Opcode(Opcode::Orig)).repeated())
+                .separated_by(everything_until_orig())
                 .allow_trailing()
         )
         .then_ignore(end())
@@ -229,7 +237,7 @@ mod tests {
     #[test]
     fn capture_tokens_before_first_orig_separately() {
         let source = "%some #random junk .ORIG x3000\nADD R0, R0, R0\n.END";
-        let (maybe_tokens, _) = lex(source, LeniencyLevel::Lenient);
+        let (maybe_tokens, _, _) = lex(source, LeniencyLevel::Lenient);
         let tokens = maybe_tokens.unwrap();
         let (file, _) = parse(source, tokens, LeniencyLevel::Lenient);
 
@@ -240,7 +248,7 @@ mod tests {
     #[test]
     fn ignore_after_end() {
         let source = ".ORIG x3000\nADD R0, R0, R0\n.END then %some #random junk!";
-        let (maybe_tokens, _) = lex(source, LeniencyLevel::Lenient);
+        let (maybe_tokens, _, _) = lex(source, LeniencyLevel::Lenient);
         let tokens = maybe_tokens.unwrap();
         let (file, _) = parse(source, tokens, LeniencyLevel::Lenient);
 
@@ -259,7 +267,7 @@ mod tests {
     #[test]
     fn operand_error() {
         let source = ".ORIG x3000\nADD R0, R0, #OOPS; <- error\n.END";
-        let (maybe_tokens, _) = lex(source, LeniencyLevel::Lenient);
+        let (maybe_tokens, _, _) = lex(source, LeniencyLevel::Lenient);
         let tokens = maybe_tokens.unwrap();
         let (file, _) = parse(source, tokens, LeniencyLevel::Lenient);
 
@@ -275,7 +283,7 @@ mod tests {
     #[test]
     fn label_error() {
         let source = ".ORIG x3000\nA%DDER ADD R0, R0, #1; <- error\n.END";
-        let (maybe_tokens, _) = lex(source, LeniencyLevel::Lenient);
+        let (maybe_tokens, _, _) = lex(source, LeniencyLevel::Lenient);
         let tokens = maybe_tokens.unwrap();
         let (file, _) = parse(source, tokens, LeniencyLevel::Lenient);
 
