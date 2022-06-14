@@ -11,10 +11,42 @@ use crate::lexer::{LexData, LiteralValue, Opcode};
 use crate::parser::{File, get, get_result, Instruction, Operand, Program, result, WithErrData};
 use crate::{Span, Spanned};
 
-type ErrorList = Vec<Spanned<Error>>;
+type ErrorList = Vec<Error>;
 
 use Error::*;
+#[derive(Debug)]
 pub enum Error {
+    Single(SingleError),
+    Spanned(Span, SingleError),
+    Multiple(Vec<Error>),
+}
+
+impl Error {
+    pub fn report(self) -> Vec<Report> {
+        match self {
+            Single(error) => vec![report_single(error).finish()],
+            Spanned(span, error) => vec![
+                report_single(error)
+                    .with_label(Label::new(span).with_message("here"))
+                    .finish()
+            ],
+            Multiple(errors) =>
+                errors.into_iter()
+                    .flat_map(|e| e.report())
+                    .collect()
+        }
+    }
+}
+
+use SingleError::*;
+#[derive(Debug)]
+pub enum SingleError {
+    Io(std::io::Error),
+    Lex(chumsky::error::Simple<char>),
+    Parse(chumsky::error::Simple<crate::lexer::Token>),
+    Assemble,
+    Link,
+    
     BadProgram,
     BadInstruction,
     BadLabel,
@@ -32,13 +64,14 @@ pub enum Error {
     NoEnd,
 }
 
+#[derive(Debug)]
 pub enum InvalidReferenceReason {
     Undefined,
     Duplicated,
     OutOfBounds,
 }
 
-impl Error {
+impl SingleError {
     fn objects_overlap(p1: ObjectPlacement, p2: ObjectPlacement) -> Self {
         let (placement1, placement2) =
             if p1.span_in_memory.start <= p2.span_in_memory.start {
@@ -92,15 +125,14 @@ impl Error {
                     o2e_width = max(4, min_signed_hex_digits_required(placement2.span_in_memory.end) as usize),
                 )
             }
-            NoTokens => {
-                "no LC-3 assembly in file".to_string()
-            }
-            NoOrig => {
-                "no .ORIG pseudo-op in file".to_string()
-            }
-            NoEnd => {
-                "no .END pseudo-op in file".to_string()
-            }
+            NoTokens => "no LC-3 assembly in file".to_string(),
+            NoOrig => "no .ORIG pseudo-op in file".to_string(),
+            NoEnd => "no .END pseudo-op in file".to_string(),
+            Io(ioe) => ioe.to_string(),
+            Lex(le) => le.to_string(),
+            Parse(pe) => pe.to_string(),
+            Assemble => "unexpected assembly error".to_string(),
+            Link => "unexpected link error".to_string(),
         }
     }
 }
@@ -112,11 +144,9 @@ fn min_signed_hex_digits_required(n: i32) -> u8 {
 }
 
 
-pub fn report(spanned_error: Spanned<Error>) -> Report {
-    let (error, span) = spanned_error;
-    let mut r =
-        Report::build(ReportKind::Error, (), 0)
-            .with_message(error.message());
+fn report_single(error: SingleError) -> ReportBuilder<Span> {
+    let mut r = Report::build(ReportKind::Error, (), 0)
+        .with_message(error.message());
     match error {
         DuplicateLabel { occurrences, .. } => {
             let mut first_declaration_labeled = false;
@@ -138,22 +168,20 @@ pub fn report(spanned_error: Spanned<Error>) -> Report {
                     (placement2, "start", placement1, "end")
                 };
             r = r.with_label(Label::new(first.span_in_file)
-                    .with_message(format!("{} of this object overlaps the other", first_pos_text)))
-                 .with_label(Label::new(second.span_in_file)
+                .with_message(format!("{} of this object overlaps the other", first_pos_text)))
+                .with_label(Label::new(second.span_in_file)
                     .with_message(format!("{} of this object overlaps the other", second_pos_text)));
         }
-        NoTokens => {},
-        _ => {
-            r = r.with_label(Label::new(span).with_message("here"));
-        }
+        _ => {}
     }
-    r.finish()
+    r
 }
+
 
 use OperandType::*;
 use crate::assembler::{calculate_offset, get_orig};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum OperandType {
     Register,
     UnqualifiedNumber,
@@ -314,8 +342,8 @@ impl ParseErrorsAnalysis {
         Default::default()
     }
 
-    fn push_error(&mut self, error: Error, span: &Span) {
-        self.errors.push((error, span.clone()));
+    fn push_error(&mut self, single_error: SingleError, span: &Span) {
+        self.errors.push(Spanned(span.clone(), single_error));
     }
 }
 
@@ -362,10 +390,11 @@ impl MutVisitor for DuplicateLabelsAnalysis {
         labels.iter()
             .filter(|(_, occurrences)| occurrences.len() > 1)
             .map(|(label, occurrences)|
-                     (DuplicateLabel {
+                 Single(
+                     DuplicateLabel {
                          label: label.clone(),
                          occurrences: occurrences.clone()
-                     }, 0..0) // TODO: dummy span, refactor so not required for errors with alternate span data
+                     })
             )
             .for_each(|e| errors.push(e));
     }
@@ -488,21 +517,23 @@ impl<'a> LabelOffsetBoundsAnalysis<'a> {
             Err(_) => {
                 // TODO: make more precise. This case shouldn't be possible unless one of the estimated addresses is far out of bounds.
                 self.errors.push(
-                    (InvalidLabelReference {
-                        label: label.clone(),
-                        reason: InvalidReferenceReason::OutOfBounds
-                    }, span.clone()));
+                    Spanned(span.clone(),
+                        InvalidLabelReference {
+                            label: label.clone(),
+                            reason: InvalidReferenceReason::OutOfBounds
+                        }));
             }
             Ok(offset) => {
                 if min_signed_width(offset as i32) > width {
                     self.errors.push(
-                        (LabelTooDistant {
-                            label: label.clone(),
-                            width,
-                            est_ref_pos: ref_addr,
-                            offset,
-                            est_label_pos: label_addr,
-                        }, span.clone()))
+                        Spanned(span.clone(),
+                            LabelTooDistant {
+                                label: label.clone(),
+                                width,
+                                est_ref_pos: ref_addr,
+                                offset,
+                                est_label_pos: label_addr,
+                            }));
                 }
             }
         }
@@ -533,10 +564,11 @@ impl<'a> MutVisitor for LabelOffsetBoundsAnalysis<'a> {
                 match self.symbol_table.get(label) {
                     None => {
                         self.errors.push(
-                            (InvalidLabelReference {
+                            Spanned(op_span.clone(),
+                                InvalidLabelReference {
                                      label: label.clone(),
                                      reason: InvalidReferenceReason::Undefined
-                                 }, op_span.clone()));
+                                }));
                     }
                     Some(stv) => match stv {
                         Ok(addr) => {
@@ -549,17 +581,19 @@ impl<'a> MutVisitor for LabelOffsetBoundsAnalysis<'a> {
                             }
                             InvalidSymbolError::Duplicated => {
                                 self.errors.push(
-                                    (InvalidLabelReference {
-                                        label: label.clone(),
-                                        reason: InvalidReferenceReason::Duplicated
-                                    }, op_span.clone()));
+                                    Spanned(op_span.clone(),
+                                        InvalidLabelReference {
+                                            label: label.clone(),
+                                            reason: InvalidReferenceReason::Duplicated
+                                        }));
                             }
                             InvalidSymbolError::OutOfBounds => {
                                 self.errors.push(
-                                    (InvalidLabelReference {
-                                        label: label.clone(),
-                                        reason: InvalidReferenceReason::OutOfBounds
-                                    }, op_span.clone()));
+                                    Spanned(op_span.clone(),
+                                        InvalidLabelReference {
+                                            label: label.clone(),
+                                            reason: InvalidReferenceReason::OutOfBounds
+                                        }));
                             }
                         }
                     }
@@ -588,7 +622,7 @@ impl OperandTypesAnalysis {
             let ops_len = operands.len();
             let exp_len = expected.len();
             if ops_len != exp_len {
-                self.errors.push((WrongNumberOfOperands { expected: exp_len, actual: ops_len }, span.clone()))
+                self.errors.push(Spanned(span.clone(), WrongNumberOfOperands { expected: exp_len, actual: ops_len }))
             } else {
                 for ((op_res, op_span), exp_ty) in zip(operands, expected) {
                     if let Ok(op) = op_res {
@@ -598,7 +632,7 @@ impl OperandTypesAnalysis {
                             } else {
                                 OperandType::of(op)
                             };
-                            self.errors.push((OperandTypeMismatch { expected: exp_ty.clone(), actual }, op_span.clone()));
+                            self.errors.push(Spanned(op_span.clone(), OperandTypeMismatch { expected: exp_ty.clone(), actual }));
                         }
                     }
                 }
@@ -660,7 +694,7 @@ struct ObjectPlacementAnalysis {
     object_spans: Vec<ObjectPlacement>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ObjectPlacement {
     position_in_file: usize,
     span_in_file: Span,
@@ -683,9 +717,7 @@ impl MutVisitor for ObjectPlacementAnalysis {
         self.object_spans.sort_unstable_by_key(|span| span.span_in_memory.start);
         for (op1, op2) in self.object_spans.iter().tuple_windows() {
             if op2.span_in_memory.start < op1.span_in_memory.end {
-                self.errors.push((
-                    Error::objects_overlap(op1.clone(), op2.clone()),
-                    0..0)); // TODO: refactor to avoid dummy span
+                self.errors.push(Single(SingleError::objects_overlap(op1.clone(), op2.clone())));
             }
         }
     }
@@ -895,20 +927,19 @@ trait MutVisitor {
 fn analyze_lex_data(lex_data: &LexData, file_span: &Span) -> ErrorList {
     let mut errors = Vec::new();
     if lex_data.no_tokens {
-        errors.push((NoTokens, 0..0))
+        errors.push(Single(NoTokens))
     } else {
         if !lex_data.orig_present {
-            errors.push((NoOrig, file_span.start..file_span.start));
+            errors.push(Spanned(file_span.start..file_span.start, NoOrig));
         }
         if !lex_data.end_present {
-            errors.push((NoEnd, file_span.end..file_span.end));
+            errors.push(Spanned(file_span.end..file_span.end, NoEnd));
         }
     }
     errors
 }
 
-
-pub fn validate(lex_data: &LexData, file_spanned: &Spanned<File>) -> ErrorList {
+pub fn validate(lex_data: &LexData, file_spanned: &Spanned<File>) -> Vec<Error> {
     let (file, file_span) = file_spanned;
 
     let errors_from_lex_data = analyze_lex_data(&lex_data, file_span);

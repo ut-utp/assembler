@@ -219,10 +219,13 @@ fn file(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<File>, Error = Si
             (File { before_first_orig, programs }, span))
 }
 
-pub fn parse(src: &str, tokens: Vec<Spanned<Token>>, leniency: LeniencyLevel) -> (Option<Spanned<File>>, Vec<Simple<Token>>) {
+pub fn parse(src: &str, tokens: Vec<Spanned<Token>>, leniency: LeniencyLevel) -> Result<Spanned<File>, Vec<Simple<Token>>> {
     let len = src.chars().count();
-    file(leniency)
-        .parse_recovery_verbose(Stream::from_iter(len..len + 1, tokens.into_iter()))
+    let (maybe_file, errors) =
+        file(leniency)
+            .parse_recovery_verbose(Stream::from_iter(len..len + 1, tokens.into_iter()));
+
+    maybe_file.ok_or(errors)
 }
 
 
@@ -237,23 +240,20 @@ mod tests {
     #[test]
     fn capture_tokens_before_first_orig_separately() {
         let source = "%some #random junk .ORIG x3000\nADD R0, R0, R0\n.END";
-        let (maybe_tokens, _, _) = lex(source, LeniencyLevel::Lenient);
-        let tokens = maybe_tokens.unwrap();
-        let (file, _) = parse(source, tokens, LeniencyLevel::Lenient);
+        let (tokens, _) = lex(source, LeniencyLevel::Lenient).unwrap();
+        let file = parse(source, tokens, LeniencyLevel::Lenient).unwrap();
 
         assert_eq!((vec![Token::Invalid, Token::Invalid, Token::Label("JUNK".to_string())], 0..18),
-                   file.unwrap().0.before_first_orig);
+                   file.0.before_first_orig);
     }
 
     #[test]
     fn ignore_after_end() {
         let source = ".ORIG x3000\nADD R0, R0, R0\n.END then %some #random junk!";
-        let (maybe_tokens, _, _) = lex(source, LeniencyLevel::Lenient);
-        let tokens = maybe_tokens.unwrap();
-        let (file, _) = parse(source, tokens, LeniencyLevel::Lenient);
+        let (tokens, _) = lex(source, LeniencyLevel::Lenient).unwrap();
+        let file = parse(source, tokens, LeniencyLevel::Lenient).unwrap();
 
-
-        let f = file.unwrap().0;
+        let f = file.0;
         assert_eq!((vec![], 0..5), f.before_first_orig); // TODO: probably doesn't need fixing, but span should probably be 0..0; find source of bug
         assert_eq!(vec![(Ok(Program {
                 orig: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11),
@@ -267,9 +267,8 @@ mod tests {
     #[test]
     fn operand_error() {
         let source = ".ORIG x3000\nADD R0, R0, #OOPS; <- error\n.END";
-        let (maybe_tokens, _, _) = lex(source, LeniencyLevel::Lenient);
-        let tokens = maybe_tokens.unwrap();
-        let (file, _) = parse(source, tokens, LeniencyLevel::Lenient);
+        let (tokens, _) = lex(source, LeniencyLevel::Lenient).unwrap();
+        let file = parse(source, tokens, LeniencyLevel::Lenient).unwrap();
 
         assert_eq!(vec![(Ok(Program {
                 orig: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11),
@@ -277,15 +276,14 @@ mod tests {
                     (Ok(Instruction { label: None, opcode: (Ok(Add), 12..15), operands: (Ok(vec![(Ok(Register(R0)), 16..18), (Ok(Register(R0)), 20..22), (Err(()), 24..29)]), 16..29) }), 12..29)
                 ],
             }), 0..44)],
-            file.unwrap().0.programs);
+            file.0.programs);
     }
 
     #[test]
     fn label_error() {
         let source = ".ORIG x3000\nA%DDER ADD R0, R0, #1; <- error\n.END";
-        let (maybe_tokens, _, _) = lex(source, LeniencyLevel::Lenient);
-        let tokens = maybe_tokens.unwrap();
-        let (file, _) = parse(source, tokens, LeniencyLevel::Lenient);
+        let (tokens, _) = lex(source, LeniencyLevel::Lenient).unwrap();
+        let file = parse(source, tokens, LeniencyLevel::Lenient).unwrap();
 
         assert_eq!(vec![(Ok(Program {
                 orig: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11),
@@ -293,7 +291,7 @@ mod tests {
                    (Ok(Instruction { label: Some((Err(()), 12..18)), opcode: (Ok(Add), 19..22), operands: (Ok(vec![(Ok(Register(R0)), 23..25), (Ok(Register(R0)), 27..29), (Ok(NumberLiteral(LiteralValue::Word(1))), 31..33)]), 23..33) }), 12..33)
                 ],
             }), 0..48)],
-            file.unwrap().0.programs);
+            file.0.programs);
     }
 
 }

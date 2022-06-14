@@ -3,7 +3,7 @@ extern crate lc3_assembler;
 use lc3_isa::{ADDR_MAX_VAL, Word};
 use std::ops::Index;
 use lc3_isa::util::MemoryDump;
-use lc3_assembler::{assembler, lexer, linker, parser, LeniencyLevel};
+use lc3_assembler::{assembler, lexer, linker, parser, LeniencyLevel, assemble};
 
 #[test]
 fn load_store_medium() {
@@ -270,16 +270,8 @@ mod single_instruction {
 }
 
 fn test(input: &str, orig: usize, expected_mem: &[Word]) {
-    let (maybe_tokens, _, _) = lexer::lex(input, LeniencyLevel::Lenient);
-    let tokens = maybe_tokens.expect("lexing failed");
-
-    let (maybe_file, _) = parser::parse(input, tokens, LeniencyLevel::Lenient);
-    let (mut file, _) = maybe_file.expect("parsing failed");
-    assert_eq!(1, file.programs.len(), "parsed unexpected number of programs: {}", file.programs.len());
-    let program = file.programs.remove(0).0.expect("parse error in program");
-    let object = assembler::assemble(program).expect("assembly failed");
-
-    let mem = linker::link([object], false).expect("linking failed");
+    let src = input.to_string();
+    let mem = assemble(&src, LeniencyLevel::Lenient, true).unwrap();
 
     for i in 0..orig {
         assert_mem(&mem, i, 0x0000);

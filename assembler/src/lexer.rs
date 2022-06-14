@@ -386,14 +386,11 @@ pub struct LexData {
     pub(crate) end_present: bool,
 }
 
-fn contains_token(tokens: &Option<Vec<Spanned<Token>>>, token: Token) -> bool {
-    match tokens {
-        None => false,
-        Some(ts) => ts.iter().any(|t| t.0 == token)
-    }
+fn contains_token(tokens: &Vec<Spanned<Token>>, token: Token) -> bool {
+    tokens.iter().any(|t| t.0 == token)
 }
 
-pub fn lex(source: &str, leniency: LeniencyLevel) -> (Option<Vec<Spanned<Token>>>, LexData, Vec<Simple<char>>) {
+pub fn lex(source: &str, leniency: LeniencyLevel) -> Result<(Vec<Spanned<Token>>, LexData), Vec<Simple<char>>> {
     let (maybe_csprs, mut errors) = case_sensitive_pass(source);
     let tokens =
         maybe_csprs
@@ -402,11 +399,17 @@ pub fn lex(source: &str, leniency: LeniencyLevel) -> (Option<Vec<Spanned<Token>>
                 errors.extend(cip_errors);
                 maybe_tokens
             });
-    let no_tokens = if let Some(ts) = &tokens { ts.is_empty() } else { true };
-    let orig_present = contains_token(&tokens, Token::Opcode(Opcode::Orig));
-    let end_present = contains_token(&tokens, Token::End);
-    let lex_data = LexData { no_tokens, orig_present, end_present };
-    (tokens, lex_data, errors)
+
+    match tokens {
+        None => Err(errors),
+        Some(ts) => {
+            let no_tokens = ts.is_empty();
+            let orig_present = contains_token(&ts, Token::Opcode(Opcode::Orig));
+            let end_present = contains_token(&ts, Token::End);
+            let lex_data = LexData { no_tokens, orig_present, end_present };
+            Ok((ts, lex_data))
+        }
+    }
 }
 
 
@@ -420,20 +423,20 @@ mod tests {
     #[test]
     fn lone_error() {
         let source = "#OOPS";
-        let (tokens, _, _) = lex(source, LeniencyLevel::Lenient);
+        let (tokens, _) = lex(source, LeniencyLevel::Lenient).unwrap();
         assert_eq!(
-            Some(vec![
+            vec![
                 (Invalid, 0..5),
-            ]),
+            ],
             tokens);
     }
 
     #[test]
     fn error_in_context() {
         let source = "ADD R0, R0, #OOPS; <- error";
-        let (tokens, _, _) = lex(source, LeniencyLevel::Lenient);
+        let (tokens, _) = lex(source, LeniencyLevel::Lenient).unwrap();
         assert_eq!(
-            Some(vec![
+            vec![
                 (Opcode(Add),   0.. 3),
                 (Register(R0),  4.. 6),
                 (Comma,         6.. 7),
@@ -441,7 +444,7 @@ mod tests {
                 (Comma,        10..11),
                 (Invalid,      12..17),
                 (Comment,      17..27),
-            ]),
+            ],
             tokens);
     }
 }

@@ -4,14 +4,11 @@ use std::{env, fs};
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use ariadne::Source;
-use lc3_assembler::parser::parse;
+use lc3_assembler::parser::{File, parse};
 use lc3_shims::memory::FileBackedMemoryShim;
 use clap::{Parser};
-use lc3_assembler::analysis::{report, validate};
-use lc3_assembler::assembler::assemble;
-use lc3_assembler::LeniencyLevel;
-use lc3_assembler::lexer::lex;
-use lc3_assembler::linker::link;
+use lc3_isa::util::MemoryDump;
+use lc3_assembler::{assemble, assemble_file, LeniencyLevel, parse_and_analyze, parse_and_analyze_file};
 
 const MEM_DUMP_FILE_EXTENSION: &'static str = "mem";
 
@@ -23,9 +20,9 @@ const MEM_DUMP_FILE_EXTENSION: &'static str = "mem";
                   of LC-3 machine code."
       )]
 struct Args {
-    /// Input file paths
+    /// Input file path
     #[clap(required = true, parse(from_os_str), value_name = "INPUT_FILE")]
-    input: Vec<PathBuf>,
+    input: PathBuf,
 
     /// Enforce all rules of the original LC-3 assembly language
     ///
@@ -54,59 +51,62 @@ fn main() {
         .join().unwrap();
 }
 
-fn as_() {
+enum Error {
+    Io(std::io::Error),
+    MemoryShim(lc3_shims::memory::error::MemoryShimError),
+    Assembler
+}
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error::Io(e)
+    }
+}
+
+impl From<lc3_shims::memory::error::MemoryShimError> for Error {
+    fn from(e: lc3_shims::memory::error::MemoryShimError) -> Self {
+        Error::MemoryShim(e)
+    }
+}
+
+fn as_() -> Result<(), Error> {
     let args = Args::parse();
 
-    for path in args.input {
-        assert!(path.is_file());
+    let leniency = if args.strict { LeniencyLevel::Strict } else { LeniencyLevel::Lenient };
 
-        let leniency = if args.strict { LeniencyLevel::Strict } else { LeniencyLevel::Lenient };
+    let src = fs::read_to_string(args.input.clone())?;
 
-        let string = fs::read_to_string(path.clone()).expect(&format!("Could not read file at: {:?}", path));
-        let src = string.as_str();
-
-        let (maybe_tokens, lex_data, lex_errs) = lex(src, leniency);
-        if let None = maybe_tokens {
-            for lex_err in lex_errs {
-                println!("Lex error: {}", lex_err);
+    if args.check {
+        match parse_and_analyze(&src, leniency) {
+            Ok(_) => {
+                println!("{}: No errors found.", args.input.display());
+                Ok(())
             }
-            continue;
+            Err(error) => print_errors(error, &src)
         }
-        let tokens = maybe_tokens.expect("Lexing failed, but produced no errors.");
+    } else {
+        match assemble(&src, leniency, args.no_os) {
+            Ok(mem) => {
+                let mut output_path = args.input.clone();
+                output_path.set_extension(MEM_DUMP_FILE_EXTENSION);
+                let mut file_backed_mem = FileBackedMemoryShim::with_initialized_memory(output_path, mem);
+                file_backed_mem.flush_all_changes()?;
 
-        let (maybe_file, parse_errs) = parse(src, tokens, leniency);
-        if let None = maybe_file {
-            for parse_err in parse_errs {
-                println!("{}", parse_err);
+                Ok(())
             }
-            continue;
-        }
-        let spanned_file = maybe_file.expect("Parsing failed, but produced no errors.");
-
-        let errors = validate(&lex_data, &spanned_file);
-
-        if !errors.is_empty() {
-            for error in errors {
-                let report = report(error);
-                report.eprint(Source::from(src));
-            }
-            continue;
-        }
-
-        if args.check {
-            println!("{}: No errors found.", path.to_str().unwrap());
-        } else {
-            let mut file = spanned_file.0;
-            let objects =
-                file.programs.into_iter()
-                    .map(|program| assemble(program.0.expect("Found invalid object.")).expect("Failed to assemble object."));
-
-            let mem = link(objects, !args.no_os).expect("linking failed");
-
-            let mut output_path = path.clone();
-            output_path.set_extension(MEM_DUMP_FILE_EXTENSION);
-            let mut file_backed_mem = FileBackedMemoryShim::with_initialized_memory(output_path, mem);
-            file_backed_mem.flush_all_changes().unwrap();
+            Err(error) => print_errors(error, &src)
         }
     }
+}
+
+fn print_errors(error: lc3_assembler::analysis::Error, src: &String) -> Result<(), Error> {
+    let print_results =
+        error.report().into_iter()
+            .map(|report| report.eprint(Source::from(src)))
+            .collect::<Vec<_>>();
+
+    for print_result in print_results {
+        print_result?
+    }
+    Err(Error::Assembler)
 }
