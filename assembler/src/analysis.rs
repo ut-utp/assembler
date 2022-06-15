@@ -58,7 +58,7 @@ pub enum SingleError {
     DuplicateLabel { label: String, occurrences: Vec<Span>, },
     InvalidLabelReference { label: String, reason: InvalidReferenceReason },
     LabelTooDistant { label: String, width: u8, est_ref_pos: RoughAddr, est_label_pos: RoughAddr, offset: SignedWord },
-    ObjectsOverlap { placement1: ObjectPlacement, placement2: ObjectPlacement },
+    RegionsOverlap { placement1: RegionPlacement, placement2: RegionPlacement },
     NoTokens,
     NoOrig,
     NoEnd,
@@ -72,14 +72,14 @@ pub enum InvalidReferenceReason {
 }
 
 impl SingleError {
-    fn objects_overlap(p1: ObjectPlacement, p2: ObjectPlacement) -> Self {
+    fn regions_overlap(p1: RegionPlacement, p2: RegionPlacement) -> Self {
         let (placement1, placement2) =
             if p1.span_in_memory.start <= p2.span_in_memory.start {
                 (p1, p2)
             } else {
                 (p2, p1)
             };
-        ObjectsOverlap { placement1, placement2 }
+        RegionsOverlap { placement1, placement2 }
     }
 
     fn message(&self) -> String {
@@ -111,8 +111,8 @@ impl SingleError {
                         label_pos_width = max(4, min_signed_hex_digits_required(*est_ref_pos) as usize),
                         ref_pos_width = max(4, min_signed_hex_digits_required(*est_label_pos) as usize),)
             }
-            ObjectsOverlap { placement1, placement2 } => {
-                format!("object {} in file occupying [{:#0o1s_width$X}, {:#0o1e_width$X}) overlaps object {} occupying [{:#0o2s_width$X}, {:#0o2e_width$X})",
+            RegionsOverlap { placement1, placement2 } => {
+                format!("region {} in file occupying [{:#0o1s_width$X}, {:#0o1e_width$X}) overlaps region {} occupying [{:#0o2s_width$X}, {:#0o2e_width$X})",
                     placement1.position_in_file,
                     placement1.span_in_memory.start,
                     placement1.span_in_memory.end,
@@ -160,7 +160,7 @@ fn report_single(error: SingleError) -> ReportBuilder<Span> {
                 r = r.with_label(Label::new(occurrence).with_message(label_message))
             }
         }
-        ObjectsOverlap { placement1, placement2 } => {
+        RegionsOverlap { placement1, placement2 } => {
             let (first, first_pos_text, second, second_pos_text) =
                 if placement1.position_in_file < placement2.position_in_file {
                     (placement1, "end", placement2, "start")
@@ -691,11 +691,11 @@ struct ObjectPlacementAnalysis {
     errors: ErrorList,
     last_start: RoughAddr,
     object_index: usize,
-    object_spans: Vec<ObjectPlacement>,
+    object_spans: Vec<RegionPlacement>,
 }
 
 #[derive(Clone, Debug)]
-pub struct ObjectPlacement {
+pub struct RegionPlacement {
     position_in_file: usize,
     span_in_file: Span,
     span_in_memory: Range<RoughAddr>,
@@ -717,14 +717,14 @@ impl MutVisitor for ObjectPlacementAnalysis {
         self.object_spans.sort_unstable_by_key(|span| span.span_in_memory.start);
         for (op1, op2) in self.object_spans.iter().tuple_windows() {
             if op2.span_in_memory.start < op1.span_in_memory.end {
-                self.errors.push(Single(SingleError::objects_overlap(op1.clone(), op2.clone())));
+                self.errors.push(Single(SingleError::regions_overlap(op1.clone(), op2.clone())));
             }
         }
     }
 
     fn exit_program(&mut self, _program: &Program, span: &Span, location: &LocationCounter) {
         self.object_spans.push(
-            ObjectPlacement {
+            RegionPlacement {
                 position_in_file: self.object_index,
                 span_in_file: span.clone(),
                 span_in_memory: self.last_start..location.value

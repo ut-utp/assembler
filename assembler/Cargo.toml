@@ -46,3 +46,6 @@ lc3-isa = { git = "https://github.com/ut-utp/core", branch = "master", version =
 lc3-shims = { git = "https://github.com/ut-utp/core", branch = "master", version = "0.1.0", default-features = false }
 lc3-os = { git = "https://github.com/ut-utp/core", branch = "master", version = "0.1.0", default-features = false }
 # TODO: ^ eventually don't pull these from git
+
+[dev-dependencies]
+assert_matches = "1.5.0"

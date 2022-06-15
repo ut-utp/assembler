@@ -3,7 +3,8 @@ extern crate lc3_assembler;
 use lc3_isa::{ADDR_MAX_VAL, Word};
 use std::ops::Index;
 use lc3_isa::util::MemoryDump;
-use lc3_assembler::{assembler, lexer, linker, parser, LeniencyLevel, assemble};
+use lc3_assembler::{assembler, lexer, linker, parser, LeniencyLevel, parse_and_analyze, assemble};
+use lc3_assembler::analysis::Error;
 
 #[test]
 fn load_store_medium() {
@@ -287,4 +288,155 @@ fn test(input: &str, orig: usize, expected_mem: &[Word]) {
 fn assert_mem(mem: &MemoryDump, location: usize, expected: Word) {
     let actual = mem[location];
     assert_eq!(expected, actual, "differed at {:#x}: expected {:#x}, was {:#x}", location, expected, actual);
+}
+
+
+
+mod error {
+    use assert_matches::assert_matches;
+    use lc3_assembler::analysis::{SingleError, OperandType, InvalidReferenceReason};
+    use super::*;
+
+    macro_rules! single_error_tests {
+        ($tests_name:ident
+            $(
+                $test_name:ident: $source:expr => $expected:pat
+            ),+
+            $(,)*
+        ) => {
+            mod $tests_name {
+                use super::*;
+
+                $(
+                    #[test]
+                    fn $test_name() {
+                        let src = $source.to_string();
+                        match parse_and_analyze(&src, LeniencyLevel::Lenient) {
+                            Err(error) => {
+                                match error {
+                                    Error::Multiple(errors) => {
+                                        assert_eq!(errors.len(), 1, "Found too many args: {:?}", errors);
+                                        match errors.get(0) {
+                                            Some(Error::Single(error))
+                                            | Some(Error::Spanned(_, error)) => {
+                                                assert_matches!(error, $expected);
+                                            }
+                                            _ => panic!(),
+                                        }
+                                    }
+                                    _ => panic!(),
+                                }
+                            }
+                            Ok(_) => panic!(),
+                        }
+                    }
+                )+
+            }
+        };
+    }
+
+    single_error_tests! { single_error
+        no_tokens:
+            ""
+            => SingleError::NoTokens,
+        no_orig:
+            "ADD R0, R0, R0\n\
+             .END"
+            => SingleError::NoOrig,
+        bad_instruction:
+            ".ORIG x3000\n\
+             #OOPS\n\
+             .END"
+            => SingleError::BadInstruction,
+        bad_label:
+            ".ORIG x3000\n\
+             #OOPS ADD R0, R0, R0\n\
+             .END"
+            => SingleError::BadLabel,
+        // TODO: these errors might currently be impossible to generate. Review relevant parsing/analysis
+        // bad_opcode:
+        //     ".ORIG x3000\n\
+        //      #OOPS R0, R0, R0\n\
+        //      .END"
+        //     => SingleError::BadOpcode,
+        // bad_operands:
+        //     ".ORIG x3000\n\
+        //      ADD #OOPS\n\
+        //      .END"
+        //     => SingleError::BadOperands,
+        bad_operand:
+            ".ORIG x3000\n\
+             ADD R0, R0, #OOPS\n\
+             .END"
+            => SingleError::BadOperand,
+        too_few_operands:
+            ".ORIG x3000\n\
+             ADD R0, R0\n\
+             .END"
+            => SingleError::WrongNumberOfOperands { expected: 3, actual: 2 },
+        too_many_operands:
+            ".ORIG x3000\n\
+             ADD R0, R0, R0, R0\n\
+             .END"
+            => SingleError::WrongNumberOfOperands { expected: 3, actual: 4 },
+        operand_type_mismatch:
+            ".ORIG x3000\n\
+             ADD \"oops\", R0, R0\n\
+             .END"
+            => SingleError::OperandTypeMismatch {
+                expected: OperandType::Register,
+                actual:   OperandType::String,
+            },
+        duplicate_label:
+            ".ORIG x3000\n\
+             LABEL ADD R0, R0, R0\n\
+             LABEL ADD R0, R0, R0\n\
+             .END"
+            => SingleError::DuplicateLabel { .. },
+        undefined_label:
+            ".ORIG x3000\n\
+             BR SOMEWHERE\n\
+             .END"
+            => SingleError::InvalidLabelReference { reason: InvalidReferenceReason::Undefined, .. },
+        regions_overlap:
+            ".ORIG x3000\n\
+             ADD R0, R0, R0\n\
+             ADD R0, R0, R0\n\
+             .END\n\
+             \n\
+             .ORIG x3001\n\
+             ADD R0, R0, R0\n\
+             ADD R0, R0, R0\n\
+             .END"
+            => SingleError::RegionsOverlap { .. },
+        label_too_distant:
+            ".ORIG x3000\n\
+             LEA R0, LABEL\n\
+             HALT\n\
+             .BLKW 255\n\
+             LABEL .FILL 0x1234\n\
+             .END"
+            => SingleError::LabelTooDistant {
+                est_ref_pos: 0x3000,
+                est_label_pos: 0x3101,
+                offset: 0b1_0000_0000,
+                width: 9,
+                ..
+            },
+        label_too_distant_negative:
+            ".ORIG x3000\n\
+             HALT\n\
+             LABEL .FILL 0x1234\n\
+             .BLKW 255\n\
+             LEA R0, LABEL\n\
+             .END"
+            => SingleError::LabelTooDistant {
+                est_ref_pos: 0x3101,
+                est_label_pos: 0x3001,
+                offset: -0b1_0000_0001,
+                width: 9,
+                ..
+            },
+    }
+
 }
