@@ -27,16 +27,16 @@ fn load_store_medium() {
 mod single_instruction {
     use super::*;
 
-    fn single_instruction_multiple_output_test(input: &str, expected: &[Word]) {
+    fn multiple_output_test(input: &str, expected: &[Word]) {
         let input = format!(".ORIG x3000\n{}\n.END", input);
         test(input.as_str(), 0x3000, expected);
     }
 
     fn single_instruction_test(input: &str, expected: Word) {
-        single_instruction_multiple_output_test(input, &[expected]);
+        multiple_output_test(input, &[expected]);
     }
 
-    macro_rules! single_instruction_tests {
+    macro_rules! tests {
         ($tests_name:ident
             $(
                 $test_name:ident: $instruction:expr => $expected:expr
@@ -56,7 +56,7 @@ mod single_instruction {
         };
     }
 
-    single_instruction_tests! { alternative_styles
+    tests! { alternative_styles
         lowercase:       "add r0 r0 r0"   => 0x1000,
         comma_separated: "add r0, r0, r0" => 0x1000,
         with_semicolon:  "ADD R0 R0 R0;"  => 0x1000,
@@ -64,13 +64,13 @@ mod single_instruction {
         commented:       "ADD R0 R0 R0 ; comment" => 0x1000,
     }
 
-    single_instruction_tests! { labels
+    tests! { labels
         minimal:            "A     ADD R0 R0 R0" => 0x1000,
         begins_with_opcode: "ADDER ADD R0 R0 R0" => 0x1000,
         begins_with_trap:   "INIT  ADD R0 R0 R0" => 0x1000,
     }
 
-    single_instruction_tests! { add
+    tests! { add
         minimal:     "ADD R0 R0 R0"  => 0x1000,
         r1_2_3:      "ADD R1 R2 R3"  => 0x1283,
         r4_5_6:      "ADD R4 R5 R6"  => 0x1946,
@@ -81,7 +81,7 @@ mod single_instruction {
         hex_imm:     "ADD R7 R7 xA"  => 0x1FEA,
     }
 
-    single_instruction_tests! { and
+    tests! { and
         minimal:     "AND R0 R0 R0"  => 0x5000,
         r1_2_3:      "AND R1 R2 R3"  => 0x5283,
         r4_5_6:      "AND R4 R5 R6"  => 0x5946,
@@ -91,7 +91,7 @@ mod single_instruction {
         neg_imm:     "AND R7 R7 #-1" => 0x5FFF,
     }
 
-    single_instruction_tests! { jmp
+    tests! { jmp
         r0: "JMP R0" => 0xC000,
         r1: "JMP R1" => 0xC040,
         r2: "JMP R2" => 0xC080,
@@ -102,7 +102,7 @@ mod single_instruction {
         r7: "JMP R7" => 0xC1C0,
     }
 
-    single_instruction_tests! { jsrr
+    tests! { jsrr
         r0: "JSRR R0" => 0x4000,
         r1: "JSRR R1" => 0x4040,
         r2: "JSRR R2" => 0x4080,
@@ -123,7 +123,7 @@ mod single_instruction {
         single_instruction_test("RET", 0xC1C0);
     }
 
-    single_instruction_tests! { ldr
+    tests! { ldr
         minimal: "LDR R0 R0 #0"   => 0x6000,
         r1_2:    "LDR R1 R2 #3"   => 0x6283,
         max_imm: "LDR R3 R4 #31"  => 0x671F,
@@ -131,14 +131,14 @@ mod single_instruction {
         min_imm: "LDR R7 R7 #-32" => 0x6FE0,
     }
 
-    single_instruction_tests! { not
+    tests! { not
         r0_1: "NOT R0 R1" => 0x907F,
         r2_3: "NOT R2 R3" => 0x94FF,
         r4_5: "NOT R4 R5" => 0x997F,
         r6_7: "NOT R6 R7" => 0x9DFF,
     }
 
-    single_instruction_tests! { str
+    tests! { str
         minimal: "STR R0 R0 #0"   => 0x7000,
         r1_2:    "STR R1 R2 #3"   => 0x7283,
         max_imm: "STR R3 R4 #31"  => 0x771F,
@@ -146,14 +146,14 @@ mod single_instruction {
         min_imm: "STR R7 R7 #-32" => 0x7FE0,
     }
 
-    single_instruction_tests! { trap
+    tests! { trap
         minimal: "TRAP x00" => 0xF000,
         halt:    "TRAP x25" => 0xF025,
         max:     "TRAP xFF" => 0xF0FF,
         decimal: "TRAP #37" => 0xF025,
     }
 
-    single_instruction_tests! { named_traps
+    tests! { named_traps
         getc:  "GETC"  => 0xF020,
         out:   "OUT"   => 0xF021,
         puts:  "PUTS"  => 0xF022,
@@ -162,7 +162,7 @@ mod single_instruction {
         halt:  "HALT"  => 0xF025,
     }
 
-    single_instruction_tests! { br
+    tests! { br
         minimal: "BR #0"     => 0x0E00,
         n:       "BRn #0"    => 0x0800,
         z:       "BRz #0"    => 0x0400,
@@ -177,19 +177,39 @@ mod single_instruction {
         min_imm: "BRz #-256" => 0x0500,
     }
 
+    macro_rules! multiple_output_tests {
+        ($tests_name:ident
+            $(
+                $test_name:ident: $instruction:expr => $expected:expr
+            ),+
+            $(,)*
+        ) => {
+            mod $tests_name {
+                use super::*;
+
+                $(
+                    #[test]
+                    fn $test_name() {
+                        multiple_output_test($instruction, $expected);
+                    }
+                )+
+            }
+        };
+    }
+
     // TODO: make this more readable :(
     // I couldn't find a way to rearrange the macros to create one
     // for the boilerplate like "($opcode << 12) + ".
-    // Consider adding a variant in single_instruction_tests for this case?
+    // Consider adding a variant in tests for this case?
     macro_rules! reg_and_pcoffset9_instruction_tests {
         (
             $(
-                $name:ident: $operator:expr => $opcode:expr
+                $name:ident, $name2:ident: $operator:expr => $opcode:expr
             ),+
             $(,)*
         ) => {
             $(
-                single_instruction_tests! { $name
+                tests! { $name
                     //                                OPERANDS                                    RESULT
                     //                                --------                                    -----
                     minimal: ($operator.to_string() + " R0 #0").as_str()    => (($opcode << 12) + 0x000),
@@ -202,19 +222,44 @@ mod single_instruction {
                     r6:      ($operator.to_string() + " R6 #0").as_str()    => (($opcode << 12) + 0xC00),
                     r7:      ($operator.to_string() + " R7 #0").as_str()    => (($opcode << 12) + 0xE00),
                 }
+                multiple_output_tests! { $name2
+                    self_label: ("LABEL ".to_string() + $operator + " R0 LABEL").as_str()   => &[(($opcode << 12) + 0x1FF)],
+                    next_label:
+                        ($operator.to_string() + " R0 LABEL\n\
+                         LABEL ADD R0, R0, R0").as_str()
+                        => &[
+                            (($opcode << 12) + 0x000),
+                            0x1000],
+                    pos_label:
+                        ($operator.to_string() + " R0 LABEL\n\
+                         .BLKW 1\n\
+                         LABEL ADD R0, R0, R0").as_str()
+                        => &[
+                            (($opcode << 12) + 0x001),
+                            0x0000,
+                            0x1000],
+                    neg_label:
+                        ("LABEL ADD R0, R0, R0\n\
+                         .BLKW 1\n".to_string() +
+                         $operator + " R0, LABEL").as_str()
+                        => &[
+                            0x1000,
+                            0x0000,
+                            (($opcode << 12) + 0x1FD)],
+                }
             )+
         };
     }
 
     reg_and_pcoffset9_instruction_tests! {
-        ld:  "LD"  => 0x2,
-        ldi: "LDI" => 0xA,
-        lea: "LEA" => 0xE,
-        st:  "ST"  => 0x3,
-        sti: "STI" => 0xB,
+        ld,  ld_label:  "LD"  => 0x2,
+        ldi, ldi_label: "LDI" => 0xA,
+        lea, lea_label: "LEA" => 0xE,
+        st,  st_label:  "ST"  => 0x3,
+        sti, sti_label: "STI" => 0xB,
     }
 
-    single_instruction_tests! { jsr
+    tests! { jsr
         minimal: "JSR #0"     => 0x4800,
         pos_imm: "JSR #1"     => 0x4801,
         neg_imm: "JSR #-1"    => 0x4FFF,
@@ -226,7 +271,7 @@ mod single_instruction {
     mod pseudo_ops {
         use super::*;
 
-        single_instruction_tests! { fill
+        tests! { fill
             minimal:     ".FILL #0"     => 0x0000,
             pos_imm:     ".FILL #1"     => 0x0001,
             max_imm:     ".FILL #65535" => 0xFFFF,
@@ -235,33 +280,13 @@ mod single_instruction {
             max_hex_imm: ".FILL xFFFF"  => 0xFFFF,
         }
 
-        macro_rules! single_instruction_multiple_output_tests {
-            ($tests_name:ident
-                $(
-                    $test_name:ident: $instruction:expr => $expected:expr
-                ),+
-                $(,)*
-            ) => {
-                mod $tests_name {
-                    use super::*;
-
-                    $(
-                        #[test]
-                        fn $test_name() {
-                            single_instruction_multiple_output_test($instruction, $expected);
-                        }
-                    )+
-                }
-            };
-        }
-
-        single_instruction_multiple_output_tests! { blkw
+        multiple_output_tests! { blkw
             one: ".BLKW 1"  => &[0,],
             two: ".BLKW 2"  => &[0, 0,],
             ten: ".BLKW 10" => &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0,],
         }
 
-        single_instruction_multiple_output_tests! { stringz
+        multiple_output_tests! { stringz
             a:            ".STRINGZ \"a\""             => &[0x61, 0x00],
             double_quote: ".STRINGZ \"\\\"\""          => &[0x22, 0x00],
             backslash:    ".STRINGZ \"\\\\\""          => &[0x5C, 0x00],
