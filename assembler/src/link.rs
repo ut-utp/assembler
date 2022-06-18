@@ -4,7 +4,7 @@ use chumsky::chain::Chain;
 use chumsky::Parser;
 use lc3_isa::util::MemoryDump;
 use lc3_isa::{Addr, ADDR_SPACE_SIZE_IN_WORDS, Word};
-use crate::assembler::{assemble_instruction, SymbolTable, Object, ObjectWord, AssemblyResult, Region};
+use crate::assemble::{assemble_instruction, SymbolTable, Object, ObjectWord, AssemblyResult, Region};
 use crate::error::SingleError;
 
 struct LinkedRegion {

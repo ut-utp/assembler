@@ -4,7 +4,7 @@ use std::{env, fs};
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use ariadne::Source;
-use lc3_assembler::parser::{File, parse};
+use lc3_assembler::parse::{File, parse};
 use lc3_shims::memory::FileBackedMemoryShim;
 use clap::{Parser};
 use lc3_isa::util::MemoryDump;

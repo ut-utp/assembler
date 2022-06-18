@@ -8,7 +8,7 @@ use lc3_isa::{Reg, Word};
 
 use crate::{Span, Spanned};
 use crate::LeniencyLevel;
-use crate::lexer::{LiteralValue, Opcode, Token};
+use crate::lex::{LiteralValue, Opcode, Token};
 
 pub(crate) type WithErrData<T> = Spanned<Result<T, ()>>;
 
@@ -247,7 +247,7 @@ mod tests {
     use super::Operand::*;
     use super::Reg::*;
     use super::Opcode::*;
-    use crate::lexer::lex;
+    use crate::lex::lex;
 
     #[test]
     fn capture_tokens_before_first_orig_separately() {

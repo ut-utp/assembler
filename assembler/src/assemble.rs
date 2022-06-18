@@ -3,10 +3,10 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
 use std::num::{ParseIntError, TryFromIntError};
 use lc3_isa::{Addr, Reg, SignedWord, Word};
-use crate::lexer::{ConditionCodes, LiteralValue, Opcode};
-use crate::parser::{Operand, result, try_map, try_result};
-use crate::parser;
-use crate::parser::WithErrData;
+use crate::lex::{ConditionCodes, LiteralValue, Opcode};
+use crate::parse::{Operand, result, try_map, try_result};
+use crate::parse;
+use crate::parse::WithErrData;
 
 pub(crate) type SymbolTable = HashMap<String, Addr>;
 
@@ -283,10 +283,10 @@ impl TryFrom<(WithErrData<Opcode>, WithErrData<Vec<WithErrData<Operand>>>)> for 
     }
 }
 
-impl TryFrom<parser::Instruction> for ObjectWord {
+impl TryFrom<parse::Instruction> for ObjectWord {
     type Error = ();
 
-    fn try_from(value: parser::Instruction) -> Result<Self, Self::Error> {
+    fn try_from(value: parse::Instruction) -> Result<Self, Self::Error> {
         (value.opcode, value.operands).try_into()
             .map(ObjectWord::UnlinkedInstruction)
     }
@@ -452,7 +452,7 @@ pub(crate) fn assemble_instruction(symbol_table: &SymbolTable, location_counter:
     Ok(res)
 }
 
-type ParserInstructions = Vec<WithErrData<parser::Instruction>>;
+type ParserInstructions = Vec<WithErrData<parse::Instruction>>;
 
 fn first_pass(region_data: impl IntoIterator<Item=(Addr, ParserInstructions)>) -> Result<(Vec<FirstPassRegion>, SymbolTable), ()> {
     let mut fp_regions = Vec::new();
@@ -513,11 +513,11 @@ pub(crate) fn get_orig(orig_operands: WithErrData<Vec<WithErrData<Operand>>>) ->
     result(orig_operand)?.try_into()
 }
 
-pub fn assemble(file: parser::File) -> Result<Object, ()> {
+pub fn assemble(file: parse::File) -> Result<Object, ()> {
     let region_data =
         file.regions.into_iter()
             .map(|p| {
-                let parser::Region { orig, instructions } = result(p)?;
+                let parse::Region { orig, instructions } = result(p)?;
                 let origin = get_orig(orig)?;
                 Ok((origin, instructions))
             })

@@ -418,7 +418,7 @@ mod tests {
     use super::*;
     use Token::*;
     use Reg::*;
-    use crate::lexer::Opcode::*;
+    use crate::lex::Opcode::*;
 
     #[test]
     fn lone_error() {

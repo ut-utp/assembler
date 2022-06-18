@@ -2,10 +2,10 @@ use ariadne::{Label, Report, ReportBuilder, ReportKind};
 use std::cmp::max;
 use lc3_isa::SignedWord;
 use std::fmt::{Display, Formatter};
-use crate::{analysis, Span, util};
-use crate::lexer;
-use crate::lexer::LiteralValue;
-use crate::parser::Operand;
+use crate::{analyze, Span, util};
+use crate::lex;
+use crate::lex::LiteralValue;
+use crate::parse::Operand;
 use std::ops::Range;
 
 
@@ -40,8 +40,8 @@ impl From<chumsky::error::Simple<char>> for SingleError {
     }
 }
 
-impl From<chumsky::error::Simple<lexer::Token>> for SingleError {
-    fn from(error: chumsky::error::Simple<lexer::Token>) -> Self {
+impl From<chumsky::error::Simple<lex::Token>> for SingleError {
+    fn from(error: chumsky::error::Simple<lex::Token>) -> Self {
         Parse(error)
     }
 }
@@ -79,7 +79,7 @@ use SingleError::*;
 pub enum SingleError {
     Io(std::io::Error),
     Lex(chumsky::error::Simple<char>),
-    Parse(chumsky::error::Simple<lexer::Token>),
+    Parse(chumsky::error::Simple<lex::Token>),
     Assemble,
     Link,
 

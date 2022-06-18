@@ -3,7 +3,7 @@ extern crate lc3_assembler;
 use lc3_isa::{ADDR_MAX_VAL, Word};
 use std::ops::Index;
 use lc3_isa::util::MemoryDump;
-use lc3_assembler::{assemble, assembler, LeniencyLevel, lexer, linker, parse_and_analyze, parser};
+use lc3_assembler::{assemble, LeniencyLevel, lex, link, parse_and_analyze, parse};
 use lc3_assembler::error::Error;
 
 #[test]
