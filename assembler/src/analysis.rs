@@ -8,7 +8,7 @@ use itertools::{concat, Itertools, zip};
 use ariadne::{Label, Report, ReportBuilder, ReportKind};
 use lc3_isa::{Addr, SignedWord, Word};
 use crate::lexer::{LexData, LiteralValue, Opcode};
-use crate::parser::{File, get, get_result, Instruction, Operand, Program, result, WithErrData};
+use crate::parser::{File, get, get_result, Instruction, Operand, Region, result, WithErrData};
 use crate::{Span, Spanned};
 
 type ErrorList = Vec<Error>;
@@ -46,8 +46,8 @@ pub enum SingleError {
     Parse(chumsky::error::Simple<crate::lexer::Token>),
     Assemble,
     Link,
-    
-    BadProgram,
+
+    BadRegion,
     BadInstruction,
     BadLabel,
     BadOpcode,
@@ -84,7 +84,7 @@ impl SingleError {
 
     fn message(&self) -> String {
         match self {
-            BadProgram     => String::from("invalid program"),
+            BadRegion => String::from("invalid region"),
             BadInstruction => String::from("invalid instruction"),
             BadLabel       => String::from("invalid label"),
             BadOpcode      => String::from("invalid opcode"),
@@ -348,8 +348,8 @@ impl ParseErrorsAnalysis {
 }
 
 impl MutVisitor for ParseErrorsAnalysis {
-    fn enter_program_error(&mut self, span: &Span) {
-        self.push_error(BadProgram, span);
+    fn enter_region_error(&mut self, span: &Span) {
+        self.push_error(BadRegion, span);
     }
     fn enter_orig_error(&mut self, span: &Span) {
         self.push_error(BadOperands, span);
@@ -722,7 +722,7 @@ impl MutVisitor for ObjectPlacementAnalysis {
         }
     }
 
-    fn exit_program(&mut self, _program: &Program, span: &Span, location: &LocationCounter) {
+    fn exit_region(&mut self, _region: &Region, span: &Span, location: &LocationCounter) {
         self.object_spans.push(
             RegionPlacement {
                 position_in_file: self.object_index,
@@ -776,28 +776,28 @@ impl LocationCounterState {
 
 fn visit(v: &mut impl MutVisitor, file: &File) {
     v.enter_file(file);
-    for program in file.programs.iter() {
-        visit_program(v, program);
+    for region in file.regions.iter() {
+        visit_region(v, region);
     }
     v.exit_file(file);
 }
 
-fn visit_program(v: &mut impl MutVisitor, program: &WithErrData<Program>) {
-    let (program_res, span) = program;
-    match program_res {
-        Err(_) => { v.enter_program_error(span); }
-        Ok(p) => {
-            v.enter_program( p, span);
+fn visit_region(v: &mut impl MutVisitor, region: &WithErrData<Region>) {
+    let (region_res, span) = region;
+    match region_res {
+        Err(_) => { v.enter_region_error(span); }
+        Ok(r) => {
+            v.enter_region(r, span);
 
             let mut location_counter = LocationCounter::new();
 
-            let Program { orig, instructions } = p;
+            let Region { orig, instructions } = r;
             visit_orig(v, orig, &mut location_counter);
             for instruction in instructions {
                 visit_instruction(v, instruction, &mut location_counter);
             }
 
-            v.exit_program(p, span, &mut location_counter);
+            v.exit_region(r, span, &mut location_counter);
         }
     }
 }
@@ -898,9 +898,9 @@ trait MutVisitor {
     fn enter_file(&mut self, _file: &File) {}
     fn exit_file(&mut self, _file: &File) {}
 
-    fn enter_program_error(&mut self, _span: &Span) {}
-    fn enter_program(&mut self, _program: &Program, _span: &Span) {}
-    fn exit_program(&mut self, _program: &Program, _span: &Span, _location: &LocationCounter) {}
+    fn enter_region_error(&mut self, _span: &Span) {}
+    fn enter_region(&mut self, _region: &Region, _span: &Span) {}
+    fn exit_region(&mut self, _region: &Region, _span: &Span, _location: &LocationCounter) {}
 
     fn enter_orig_error(&mut self, _span: &Span) {}
     fn enter_orig(&mut self, _orig: &Vec<WithErrData<Operand>>, _span: &Span, _location: &LocationCounter) {}

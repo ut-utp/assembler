@@ -520,7 +520,7 @@ mod error {
              ADD R0, R0, R0"
             =>
             {
-                SingleError::BadProgram,
+                SingleError::BadRegion,
                 SingleError::NoEnd
             },
         two_operand_type_mismatches:
@@ -564,13 +564,13 @@ mod error {
              BR TOO_FAR ; Label too distant for offset to fit        \n\
              .END                                                    \n\
                                                                      \n\
-             .ORIG x4000 ; Bad program (missing .END)                \n\
+             .ORIG x4000 ; Bad region (missing .END)                 \n\
              "
             =>
             {
                 SingleError::BadOperand,
                 SingleError::BadInstruction,
-                SingleError::BadProgram,
+                SingleError::BadRegion,
                 SingleError::DuplicateLabel { .. },
                 SingleError::WrongNumberOfOperands { expected: 3, actual: 1 },
                 SingleError::RegionsOverlap { .. },

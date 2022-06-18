@@ -6,7 +6,7 @@ use lc3_isa::{Addr, Reg, SignedWord, Word};
 use crate::lexer::{ConditionCodes, LiteralValue, Opcode};
 use crate::parser::{Operand, result, try_map, try_result};
 use crate::parser;
-use crate::parser::{Program, WithErrData};
+use crate::parser::WithErrData;
 
 pub(crate) type SymbolTable = HashMap<String, Addr>;
 
@@ -515,9 +515,9 @@ pub(crate) fn get_orig(orig_operands: WithErrData<Vec<WithErrData<Operand>>>) ->
 
 pub fn assemble(file: parser::File) -> Result<Object, ()> {
     let region_data =
-        file.programs.into_iter()
+        file.regions.into_iter()
             .map(|p| {
-                let parser::Program { orig, instructions } = result(p)?;
+                let parser::Region { orig, instructions } = result(p)?;
                 let origin = get_orig(orig)?;
                 Ok((origin, instructions))
             })
