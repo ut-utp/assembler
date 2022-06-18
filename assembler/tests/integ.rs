@@ -3,8 +3,8 @@ extern crate lc3_assembler;
 use lc3_isa::{ADDR_MAX_VAL, Word};
 use std::ops::Index;
 use lc3_isa::util::MemoryDump;
-use lc3_assembler::{assembler, lexer, linker, parser, LeniencyLevel, parse_and_analyze, assemble};
-use lc3_assembler::analysis::Error;
+use lc3_assembler::{assemble, assembler, LeniencyLevel, lexer, linker, parse_and_analyze, parser};
+use lc3_assembler::error::Error;
 
 #[test]
 fn load_store_medium() {
@@ -320,7 +320,7 @@ fn assert_mem(mem: &MemoryDump, location: usize, expected: Word) {
 
 mod error {
     use assert_matches::assert_matches;
-    use lc3_assembler::analysis::{SingleError, OperandType, InvalidReferenceReason};
+    use lc3_assembler::error::{InvalidReferenceReason, OperandType, SingleError};
     use super::*;
 
     macro_rules! single_error_tests {

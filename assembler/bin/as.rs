@@ -99,7 +99,7 @@ fn as_() -> Result<(), Error> {
     }
 }
 
-fn print_errors(error: lc3_assembler::analysis::Error, src: &String) -> Result<(), Error> {
+fn print_errors(error: lc3_assembler::error::Error, src: &String) -> Result<(), Error> {
     let print_results =
         error.report().into_iter()
             .map(|report| report.eprint(Source::from(src)))

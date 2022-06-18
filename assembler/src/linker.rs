@@ -5,6 +5,7 @@ use chumsky::Parser;
 use lc3_isa::util::MemoryDump;
 use lc3_isa::{Addr, ADDR_SPACE_SIZE_IN_WORDS, Word};
 use crate::assembler::{assemble_instruction, SymbolTable, Object, ObjectWord, AssemblyResult, Region};
+use crate::error::SingleError;
 
 struct LinkedRegion {
     origin: Addr,
@@ -55,7 +56,7 @@ fn link_region(symbol_table: &SymbolTable, region: Region) -> Result<LinkedRegio
     Ok(LinkedRegion { origin, words })
 }
 
-pub fn link(objects: impl IntoIterator<Item=Object>, overlay_on_os: bool) -> Result<MemoryDump, crate::analysis::SingleError> {
+pub fn link(objects: impl IntoIterator<Item=Object>, overlay_on_os: bool) -> Result<MemoryDump, SingleError> {
     let objects = objects.into_iter().collect::<Vec<_>>();
 
     let mut symbol_table = HashMap::new();
@@ -67,8 +68,8 @@ pub fn link(objects: impl IntoIterator<Item=Object>, overlay_on_os: bool) -> Res
 
     let mut image =
         if overlay_on_os {
-            let first_object = objects.get(0).ok_or(crate::analysis::SingleError::Link)?;
-            let first_region = first_object.regions.get(0).ok_or(crate::analysis::SingleError::Link)?;
+            let first_object = objects.get(0).ok_or(SingleError::Link)?;
+            let first_region = first_object.regions.get(0).ok_or(SingleError::Link)?;
 
             let mut os = lc3_os::OS_IMAGE.clone().0;
             os[lc3_os::USER_PROG_START_ADDR as usize] = first_region.origin;
@@ -79,7 +80,7 @@ pub fn link(objects: impl IntoIterator<Item=Object>, overlay_on_os: bool) -> Res
         };
     for object in objects {
         for region in object.regions {
-            let linked_region = link_region(&symbol_table, region).map_err(|_| crate::analysis::SingleError::Link)?;
+            let linked_region = link_region(&symbol_table, region).map_err(|_| SingleError::Link)?;
             layer_region(&mut image, linked_region);
         }
     }
