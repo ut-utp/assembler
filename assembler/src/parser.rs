@@ -110,14 +110,20 @@ impl Operand {
 }
 
 fn operand() -> impl Parser<Token, WithErrData<Operand>, Error = Simple<Token>> {
-    let operand = select! {
-        Token::Register(reg)                 => Ok(Operand::Register(reg)),
-        Token::UnqualifiedNumberLiteral(val) => Ok(Operand::UnqualifiedNumberLiteral(val)),
-        Token::NumberLiteral(val)            => Ok(Operand::NumberLiteral(val)),
-        Token::StringLiteral(s)              => Ok(Operand::StringLiteral(s)),
-        Token::Label(s)                      => Ok(Operand::Label(s)),
-        Token::Invalid                       => Err(()),
-    };
+
+    let operand = filter_map(move |span, t: Token|
+        match t.clone() {
+            Token::Register(reg)                 => Ok(Ok(Operand::Register(reg))),
+            Token::UnqualifiedNumberLiteral(val) => Ok(Ok(Operand::UnqualifiedNumberLiteral(val))),
+            Token::NumberLiteral(val)            => Ok(Ok(Operand::NumberLiteral(val))),
+            Token::StringLiteral(s)              => Ok(Ok(Operand::StringLiteral(s))),
+            Token::Label(s)                      => Ok(Ok(Operand::Label(s))),
+            Token::Opcode(_)
+            | Token::End
+            | Token::Invalid    => Ok(Err(())),
+            _ => Err(Simple::expected_input_found(span, None, Some(t)))
+        }
+    );
     operand.map_with_span(|o, span| (o, span))
 }
 
@@ -150,10 +156,16 @@ fn instruction(leniency: LeniencyLevel) -> impl Parser<Token, WithErrData<Instru
             })
             .map_with_span(|o, span| (o, span));
 
+    let terminator =
+        just(Token::Comment).or_not()
+            .then(just(Token::Newline).ignored().or(end()))
+            .ignored();
+
     label.or_not()
         .then_ignore(comments_and_newlines().or_not())
         .then(opcode)
         .then(operands(leniency))
+        .then_ignore(terminator.rewind())
         .map_with_span(|((l, o), os), span| {
             let instruction = Instruction {
                 label: l,
@@ -292,6 +304,23 @@ mod tests {
                 ],
             }), 0..48)],
             file.0.programs);
+    }
+
+    macro_rules! parse {
+        (let $p:pat = $parser:expr, $src:expr) => {
+            let (tokens, _) = lex($src, LeniencyLevel::Lenient).unwrap();
+            let len = $src.chars().count();
+            let $p =
+                $parser
+                    .parse_recovery_verbose(Stream::from_iter(len..len + 1, tokens.into_iter()));
+        }
+    }
+
+    #[test]
+    fn instruction_error() {
+        parse!(let (maybe_instruction, errs) = instruction(LeniencyLevel::Lenient), "JMP RET .END");
+        println!("{:?}", maybe_instruction);
+        println!("{:?}", errs);
     }
 
 }

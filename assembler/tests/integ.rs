@@ -24,13 +24,9 @@ fn load_store_medium() {
     );
 }
 
+
 mod single_instruction {
     use super::*;
-
-    fn multiple_output_test(input: &str, expected: &[Word]) {
-        let input = format!(".ORIG x3000\n{}\n.END", input);
-        test(input.as_str(), 0x3000, expected);
-    }
 
     fn single_instruction_test(input: &str, expected: Word) {
         multiple_output_test(input, &[expected]);
@@ -295,6 +291,11 @@ mod single_instruction {
     }
 }
 
+fn multiple_output_test(input: &str, expected: &[Word]) {
+    let input = format!(".ORIG x3000\n{}\n.END", input);
+    test(input.as_str(), 0x3000, expected);
+}
+
 fn test(input: &str, orig: usize, expected_mem: &[Word]) {
     let src = input.to_string();
     let mem = assemble(&src, LeniencyLevel::Lenient, true).unwrap();
@@ -461,6 +462,121 @@ mod error {
                 offset: -0b1_0000_0001,
                 width: 9,
                 ..
+            },
+    }
+
+    macro_rules! contains_error {
+        ($errors:expr, $pattern:pat) => {
+            $errors.iter()
+                .any(|error| {
+                    match error {
+                        Error::Single(error)
+                        | Error::Spanned(_, error) => {
+                            matches!(error, $pattern)
+                        }
+                        _ => false,
+                    }
+                })
+        }
+    }
+
+    macro_rules! multiple_error_tests {
+        ($tests_name:ident
+            $(
+                $test_name:ident: $source:expr => {$($expected:pat),+ $(,)*}
+            ),+
+            $(,)*
+        ) => {
+            mod $tests_name {
+                use super::*;
+
+                $(
+                    #[test]
+                    fn $test_name() {
+                        let src = $source.to_string();
+                        match parse_and_analyze(&src, LeniencyLevel::Lenient) {
+                            Err(error) => {
+                                match error {
+                                    Error::Multiple(errors) => {
+                                        println!("{:?}", errors);
+                                        $(
+                                            assert!(contains_error!(errors, $expected));
+                                        )+
+                                    }
+                                    _ => panic!(),
+                                }
+                            }
+                            Ok(_) => panic!(),
+                        }
+                    }
+                )+
+            }
+        }
+    }
+
+    multiple_error_tests! { multiple_errors
+        no_end:
+            ".ORIG x3000\n\
+             ADD R0, R0, R0"
+            =>
+            {
+                SingleError::BadProgram,
+                SingleError::NoEnd
+            },
+        two_operand_type_mismatches:
+            ".ORIG x3000\n\
+             ADD \"hello\", WORLD, R0\n\
+             .END"
+            =>
+            {
+                SingleError::OperandTypeMismatch { expected: OperandType::Register, actual: OperandType::String },
+                SingleError::OperandTypeMismatch { expected: OperandType::Register, actual: OperandType::Label }
+            },
+        two_wrong_numbers_of_operands:
+            ".ORIG x3000\n\
+             ADD R0\n\
+             JMP R0, R0, R0\n\
+             .END"
+            =>
+            {
+                SingleError::WrongNumberOfOperands { expected: 1, actual: 3 },
+                SingleError::WrongNumberOfOperands { expected: 3, actual: 1 },
+            },
+        very_many:
+            ".ORIG #OOPS   ; Bad .ORIG operand                       \n\
+             AND R1, ,     ; Bad instruction (or operands)           \n\
+             LABEL ADD R0  ; Duplicate label                         \n\
+             LABEL JMP RET ; Bad operand                             \n\
+             .END                                                    \n\
+                                                                     \n\
+             .ORIG x3000    ; Likely overlapping first region        \n\
+             ADD R0, R0, R0                                          \n\
+             ADD R0, R0, R0                                          \n\
+             .END                                                    \n\
+                                                                     \n\
+             .ORIG x3001       ; Overlaps second region              \n\
+             ADD R0, R0, LABEL ; Operand type mismatch               \n\
+             BR LABEL          ; Invalid reference to duplicate label\n\
+             TOO_FAR .BLKW 0                                         \n\
+             .END                                                    \n\
+                                                                     \n\
+             .ORIG x3500                                             \n\
+             BR TOO_FAR ; Label too distant for offset to fit        \n\
+             .END                                                    \n\
+                                                                     \n\
+             .ORIG x4000 ; Bad program (missing .END)                \n\
+             "
+            =>
+            {
+                SingleError::BadOperand,
+                SingleError::BadInstruction,
+                SingleError::BadProgram,
+                SingleError::DuplicateLabel { .. },
+                SingleError::WrongNumberOfOperands { expected: 3, actual: 1 },
+                SingleError::RegionsOverlap { .. },
+                SingleError::OperandTypeMismatch { .. },
+                SingleError::InvalidLabelReference { .. },
+                SingleError::LabelTooDistant { .. },
             },
     }
 
