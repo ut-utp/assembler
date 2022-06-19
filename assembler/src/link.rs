@@ -29,15 +29,15 @@ fn link_region(symbol_table: &SymbolTable, region: Region) -> Result<LinkedRegio
                             words.push(word);
                             location_counter += 1;
                         }
-                        ObjectWord::UnlinkedInstruction(_) => panic!("Failed to link an instruction")
+                        ObjectWord::UnlinkedInstruction(_) => { return Err(SingleError::Link); }
                     }
                     AssemblyResult::MultipleObjectWords(ows) => {
                         let mut ws = ows.into_iter()
                             .map(|ow| match ow {
-                                ObjectWord::Value(word) => word,
-                                ObjectWord::UnlinkedInstruction(_) => panic!("Unexpected unlinked instruction")
+                                ObjectWord::Value(word) => Ok(word),
+                                ObjectWord::UnlinkedInstruction(_) => Err(SingleError::Link),
                             })
-                            .collect::<Vec<_>>();
+                            .collect::<Result<Vec<_>, SingleError>>()?;
                         location_counter += ws.len() as u16;
                         words.extend(ws);
                     }

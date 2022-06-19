@@ -1,6 +1,7 @@
 extern crate lc3_assembler;
 
 use std::{env, fs};
+use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use ariadne::Source;
@@ -8,6 +9,7 @@ use lc3_assembler::parse::{File, parse};
 use lc3_shims::memory::FileBackedMemoryShim;
 use clap::{Parser};
 use lc3_isa::util::MemoryDump;
+use lc3_shims::memory::error::MemoryShimError;
 use lc3_assembler::{assemble, assemble_file, LeniencyLevel, parse_and_analyze, parse_and_analyze_file};
 
 const MEM_DUMP_FILE_EXTENSION: &'static str = "mem";
@@ -43,18 +45,33 @@ struct Args {
     no_os: bool,
 }
 
-fn main() {
-    std::thread::Builder::new()
-        .name("main_greater_stack_size".to_string())
-        .stack_size(8*1024*1024)
-        .spawn(as_).unwrap()
-        .join().unwrap();
+fn main() -> Result<(), Error> {
+    let main_thread =
+        std::thread::Builder::new()
+            .name("main_greater_stack_size".to_string())
+            .stack_size(8*1024*1024)
+            .spawn(as_)?;
+    main_thread.join().map_err(|_| Error::Unexpected)?
 }
 
 enum Error {
     Io(std::io::Error),
-    MemoryShim(lc3_shims::memory::error::MemoryShimError),
-    Assembler
+    MemoryShim(MemoryShimError),
+    Assembler,
+    Unexpected
+}
+
+impl Debug for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::Io(ioe)
+            | Error::MemoryShim(MemoryShimError::IoError(ioe))
+                => write!(f, "{}", ioe),
+            Error::MemoryShim(_)
+            | Error::Assembler
+            | Error::Unexpected => write!(f, "assembly failed")
+        }
+    }
 }
 
 impl From<std::io::Error> for Error {
@@ -63,8 +80,8 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<lc3_shims::memory::error::MemoryShimError> for Error {
-    fn from(e: lc3_shims::memory::error::MemoryShimError) -> Self {
+impl From<MemoryShimError> for Error {
+    fn from(e: MemoryShimError) -> Self {
         Error::MemoryShim(e)
     }
 }

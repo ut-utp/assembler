@@ -543,29 +543,7 @@ mod error {
                 SingleError::WrongNumberOfOperands { expected: 3, actual: 1 },
             },
         very_many:
-            ".ORIG #OOPS   ; Bad .ORIG operand                       \n\
-             AND R1, ,     ; Bad instruction (or operands)           \n\
-             LABEL ADD R0  ; Duplicate label                         \n\
-             LABEL JMP RET ; Bad operand                             \n\
-             .END                                                    \n\
-                                                                     \n\
-             .ORIG x3000    ; Likely overlapping first region        \n\
-             ADD R0, R0, R0                                          \n\
-             ADD R0, R0, R0                                          \n\
-             .END                                                    \n\
-                                                                     \n\
-             .ORIG x3001       ; Overlaps second region              \n\
-             ADD R0, R0, LABEL ; Operand type mismatch               \n\
-             BR LABEL          ; Invalid reference to duplicate label\n\
-             TOO_FAR .BLKW 0                                         \n\
-             .END                                                    \n\
-                                                                     \n\
-             .ORIG x3500                                             \n\
-             BR TOO_FAR ; Label too distant for offset to fit        \n\
-             .END                                                    \n\
-                                                                     \n\
-             .ORIG x4000 ; Bad region (missing .END)                 \n\
-             "
+            include_str!("inputs/very_many_errors.asm")
             =>
             {
                 SingleError::BadOperand,
