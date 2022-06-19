@@ -1,9 +1,5 @@
 use std::collections::HashMap;
-use std::num::{ParseIntError, TryFromIntError};
-use chumsky::chain::Chain;
-use chumsky::Parser;
-use lc3_isa::util::MemoryDump;
-use lc3_isa::{Addr, ADDR_SPACE_SIZE_IN_WORDS, Word};
+use lc3_isa::{Addr, Word};
 use crate::assemble::{assemble_instruction, AssemblyResult, Object, ObjectWord, Region, SymbolTable};
 use crate::error::SingleError;
 
@@ -32,7 +28,7 @@ fn link_region(symbol_table: &SymbolTable, region: Region) -> Result<LinkedRegio
                         ObjectWord::UnlinkedInstruction(_) => { return Err(SingleError::Link); }
                     }
                     AssemblyResult::MultipleObjectWords(ows) => {
-                        let mut ws = ows.into_iter()
+                        let ws = ows.into_iter()
                             .map(|ow| match ow {
                                 ObjectWord::Value(word) => Ok(word),
                                 ObjectWord::UnlinkedInstruction(_) => Err(SingleError::Link),

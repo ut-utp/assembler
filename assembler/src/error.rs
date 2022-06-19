@@ -2,7 +2,7 @@ use ariadne::{Label, Report, ReportBuilder, ReportKind};
 use std::cmp::max;
 use lc3_isa::SignedWord;
 use std::fmt::{Display, Formatter};
-use crate::{analyze, Span, util};
+use crate::{Span, util};
 use crate::lex;
 use crate::lex::LiteralValue;
 use crate::parse::Operand;

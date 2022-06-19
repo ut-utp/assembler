@@ -1,10 +1,10 @@
-
 // TODO: docs
-// TODO: denys
 // TODO: docs URL
 
-extern crate core;
+// TODO: add more lints?
+#![deny(unused)]
 
+use std::convert::{TryFrom, TryInto};
 use std::fs;
 use std::path::PathBuf;
 
@@ -21,6 +21,32 @@ pub mod layer;
 
 type Span = std::ops::Range<usize>;
 type Spanned<T> = (T, Span);
+type WithErrData<T> = Spanned<Result<T, ()>>;
+
+fn get<T>(v: &Vec<WithErrData<T>>, i: usize) -> Option<&T> {
+    v.get(i)
+        .and_then(|res| get_result(res).as_ref().ok())
+}
+
+fn get_result<T>(v: &WithErrData<T>) -> &Result<T, ()> {
+    &v.0
+}
+
+fn result<T>(v: WithErrData<T>) -> Result<T, ()> {
+    v.0
+}
+
+fn try_result<T>(maybe_v: Option<WithErrData<T>>) -> Result<T, ()> {
+    result(maybe_v.ok_or(())?)
+}
+
+fn try_map<T, U, E>(maybe_v: Option<WithErrData<T>>) -> Result<U, ()> where
+    U: TryFrom<T, Error=E>
+{
+    try_result(maybe_v)?
+        .try_into()
+        .map_err(|_| ())
+}
 
 #[derive(Copy, Clone)]
 pub enum LeniencyLevel {

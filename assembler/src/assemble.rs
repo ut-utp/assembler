@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
-use std::fmt::Debug;
-use std::num::{ParseIntError, TryFromIntError};
+use std::num::TryFromIntError;
 use lc3_isa::{Addr, Reg, SignedWord, Word};
 use crate::lex::{ConditionCodes, LiteralValue, Opcode};
-use crate::parse::{Operand, result, try_map, try_result};
-use crate::parse;
-use crate::parse::WithErrData;
+use crate::parse::Operand;
+use crate::{parse, result, try_map, try_result, WithErrData};
 
 pub(crate) type SymbolTable = HashMap<String, Addr>;
 

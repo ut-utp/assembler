@@ -1,41 +1,13 @@
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use chumsky::combinator::Repeated;
 use chumsky::prelude::*;
 use chumsky::primitive::NoneOf;
-use chumsky::recovery::SkipUntil;
 use chumsky::Stream;
 use lc3_isa::{Reg, Word};
 
-use crate::{Span, Spanned};
+use crate::{Spanned, WithErrData};
 use crate::LeniencyLevel;
 use crate::lex::{LiteralValue, Opcode, Token};
-
-pub(crate) type WithErrData<T> = Spanned<Result<T, ()>>;
-
-pub(crate) fn get<T>(v: &Vec<WithErrData<T>>, i: usize) -> Option<&T> {
-    v.get(i)
-        .and_then(|res| get_result(res).as_ref().ok())
-}
-
-pub(crate) fn get_result<T>(v: &WithErrData<T>) -> &Result<T, ()> {
-    &v.0
-}
-
-pub(crate) fn result<T>(v: WithErrData<T>) -> Result<T, ()> {
-    v.0
-}
-
-pub(crate) fn try_result<T>(maybe_v: Option<WithErrData<T>>) -> Result<T, ()> {
-    result(maybe_v.ok_or(())?)
-}
-
-pub(crate) fn try_map<T, U, E>(maybe_v: Option<WithErrData<T>>) -> Result<U, ()> where
-    U: TryFrom<T, Error=E>
-{
-    try_result(maybe_v)?
-        .try_into()
-        .map_err(|_| ())
-}
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Region {
@@ -214,6 +186,7 @@ fn region(leniency: LeniencyLevel) -> impl Parser<Token, WithErrData<Region>, Er
 
 #[derive(Debug)]
 pub struct File {
+    #[allow(dead_code)]
     pub(crate) before_first_orig: Spanned<Vec<Token>>, // TODO: check that this only contains newlines and comments (at least if strict)
     pub regions: Vec<WithErrData<Region>>
 }

@@ -1,16 +1,13 @@
-use std::cmp::{max, min};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
-use std::fmt::{Debug, Display, format, Formatter};
-use std::ops::Range;
+use std::fmt::Debug;
 use std::string::String;
 use itertools::{concat, Itertools, zip};
-use ariadne::{Label, Report, ReportBuilder, ReportKind};
-use lc3_isa::{Addr, SignedWord, Word};
-use crate::lex::{LexData, LiteralValue, Opcode};
-use crate::parse::{File, get, get_result, Instruction, Operand, Region, result, WithErrData};
-use crate::{Span, Spanned, util};
-use crate::assemble::{calculate_offset, get_orig};
+use lc3_isa::{Addr, Word};
+use crate::lex::{LexData, Opcode};
+use crate::parse::{File, Instruction, Operand, Region};
+use crate::{get, get_result, Span, Spanned, util, WithErrData};
+use crate::assemble::calculate_offset;
 use crate::error::{Error, InvalidReferenceReason, OperandType, RegionPlacement, RoughAddr, SingleError};
 use crate::error::OperandType::*;
 use crate::error::Error::*;
@@ -105,11 +102,6 @@ enum AddressesOccupiedError {
 }
 
 impl Instruction {
-    fn get_label(&self) -> Option<&String> {
-        self.label.as_ref()
-            .and_then(|res| get_result(res).as_ref().ok())
-    }
-
     fn get_first_operand(&self) -> Option<&Operand> {
         get_result(&self.operands).as_ref().ok()
             .and_then(|ops| get(ops, 0))
