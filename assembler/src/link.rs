@@ -4,24 +4,15 @@ use chumsky::chain::Chain;
 use chumsky::Parser;
 use lc3_isa::util::MemoryDump;
 use lc3_isa::{Addr, ADDR_SPACE_SIZE_IN_WORDS, Word};
-use crate::assemble::{assemble_instruction, SymbolTable, Object, ObjectWord, AssemblyResult, Region};
+use crate::assemble::{assemble_instruction, AssemblyResult, Object, ObjectWord, Region, SymbolTable};
 use crate::error::SingleError;
 
-struct LinkedRegion {
-    origin: Addr,
-    words: Vec<Word>,
+pub struct LinkedRegion {
+    pub(crate) origin: Addr,
+    pub(crate) words: Vec<Word>,
 }
 
-fn layer_region(image: &mut [Word; ADDR_SPACE_SIZE_IN_WORDS], object: LinkedRegion) {
-    let LinkedRegion { origin, words } = object;
-    let mut addr = origin as usize;
-    for word in words {
-        image[addr] = word;
-        addr += 1;
-    }
-}
-
-fn link_region(symbol_table: &SymbolTable, region: Region) -> Result<LinkedRegion, TryFromIntError> {
+fn link_region(symbol_table: &SymbolTable, region: Region) -> Result<LinkedRegion, SingleError> {
     let mut words = Vec::new();
     let Region { origin, words: region_words, .. } = region;
     let mut location_counter = origin;
@@ -32,7 +23,7 @@ fn link_region(symbol_table: &SymbolTable, region: Region) -> Result<LinkedRegio
                 location_counter += 1;
             },
             ObjectWord::UnlinkedInstruction(instruction) =>
-                match assemble_instruction(&symbol_table, &location_counter, instruction)? {
+                match assemble_instruction(&symbol_table, &location_counter, instruction).map_err(|_| SingleError::Link)? {
                     AssemblyResult::SingleObjectWord(word) => match word {
                         ObjectWord::Value(word) => {
                             words.push(word);
@@ -56,34 +47,29 @@ fn link_region(symbol_table: &SymbolTable, region: Region) -> Result<LinkedRegio
     Ok(LinkedRegion { origin, words })
 }
 
-pub fn link(objects: impl IntoIterator<Item=Object>, overlay_on_os: bool) -> Result<MemoryDump, SingleError> {
+pub(crate) fn link_regions(symbol_table: &SymbolTable, regions: Vec<Region>) -> Result<Vec<LinkedRegion>, SingleError> {
+    regions.into_iter()
+        .map(|region| link_region(symbol_table, region))
+        .collect()
+}
+
+pub fn link(objects: impl IntoIterator<Item=Object>) -> Result<Vec<LinkedRegion>, SingleError> {
     let objects = objects.into_iter().collect::<Vec<_>>();
 
-    let mut symbol_table = HashMap::new();
+    let mut global_symbol_table = HashMap::new();
     for object in objects.iter() {
         for (label, addr) in object.symbol_table.iter() {
-            symbol_table.insert(label.clone(), *addr);
+            global_symbol_table.insert(label.clone(), *addr);
         }
     }
 
-    let mut image =
-        if overlay_on_os {
-            let first_object = objects.get(0).ok_or(SingleError::Link)?;
-            let first_region = first_object.regions.get(0).ok_or(SingleError::Link)?;
+    let linked_regions =
+        objects.into_iter()
+            .map(|object| link_regions(&mut global_symbol_table, object.regions))
+            .collect::<Result<Vec<Vec<LinkedRegion>>, SingleError>>()?
+            .into_iter()
+            .flatten()
+            .collect();
 
-            let mut os = lc3_os::OS_IMAGE.clone().0;
-            os[lc3_os::USER_PROG_START_ADDR as usize] = first_region.origin;
-
-            os
-        } else {
-            [0; ADDR_SPACE_SIZE_IN_WORDS]
-        };
-    for object in objects {
-        for region in object.regions {
-            let linked_region = link_region(&symbol_table, region).map_err(|_| SingleError::Link)?;
-            layer_region(&mut image, linked_region);
-        }
-    }
-
-    Ok(image.into())
+    Ok(linked_regions)
 }

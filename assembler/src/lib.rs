@@ -17,6 +17,7 @@ pub mod parse;
 pub mod analyze;
 pub mod assemble;
 pub mod link;
+pub mod layer;
 
 type Span = std::ops::Range<usize>;
 type Spanned<T> = (T, Span);
@@ -50,7 +51,8 @@ pub fn assemble_file(input: PathBuf, leniency: LeniencyLevel, no_os: bool) -> Re
 
 pub fn assemble(src: &String, leniency: LeniencyLevel, no_os: bool) -> Result<lc3_isa::util::MemoryDump, error::Error> {
     let file = parse_and_analyze(src, leniency)?;
-    let object = assemble::assemble(file).map_err(|_| error::SingleError::Assemble)?;
-    let mem = link::link([object], !no_os)?;
+    let assemble::Object { symbol_table, regions } = assemble::assemble(file).map_err(|_| error::SingleError::Assemble)?;
+    let linked_regions = link::link_regions(&symbol_table, regions)?;
+    let mem = layer::layer(linked_regions, !no_os)?;
     Ok(mem)
 }

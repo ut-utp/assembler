@@ -82,6 +82,7 @@ pub enum SingleError {
     Parse(chumsky::error::Simple<lex::Token>),
     Assemble,
     Link,
+    Layer,
 
     BadRegion,
     BadInstruction,
@@ -169,6 +170,7 @@ impl SingleError {
             Parse(pe) => pe.to_string(),
             Assemble => "unexpected assembly error".to_string(),
             Link => "unexpected link error".to_string(),
+            Layer => "unexpected layering error".to_string(),
         }
     }
 }
