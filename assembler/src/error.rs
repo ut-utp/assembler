@@ -78,6 +78,14 @@ impl Error {
                     .collect()
         }
     }
+
+    pub fn report_to_string(self, mut cache: impl ariadne::Cache<SourceId>) -> Result<String, std::io::Error> {
+        let mut s = Vec::new();
+        for report in self.report() {
+            report.write(&mut cache, &mut s)?;
+        }
+        Ok(String::from_utf8_lossy(&s).to_string())
+    }
 }
 
 pub(crate) type RoughAddr = i32;

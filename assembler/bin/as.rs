@@ -117,13 +117,6 @@ fn as_() -> Result<(), Error> {
 }
 
 fn print_errors(error: lc3_assembler::error::Error, mut cache: impl ariadne::Cache<SourceId>) -> Result<(), Error> {
-    let print_results =
-        error.report().into_iter()
-            .map(|report| report.eprint(&mut cache))
-            .collect::<Vec<_>>();
-
-    for print_result in print_results {
-        print_result?
-    }
+    eprint!("{}", error.report_to_string(cache)?);
     Err(Error::Assembler)
 }
