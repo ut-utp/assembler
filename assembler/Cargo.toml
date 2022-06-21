@@ -39,10 +39,9 @@ chumsky = "0.8.0"
 ariadne = "0.1.5"
 quote = "1.0.18"
 
-lc3-isa = { git = "https://github.com/ut-utp/core", branch = "master", version = "0.1.0", default-features = false }
-lc3-shims = { git = "https://github.com/ut-utp/core", branch = "master", version = "0.1.0", default-features = false }
-lc3-os = { git = "https://github.com/ut-utp/core", branch = "master", version = "0.1.0", default-features = false }
-# TODO: ^ eventually don't pull these from git
+lc3-isa = { version = "0.1.0", default-features = false }
+lc3-shims = { version = "0.1.0", default-features = false }
+lc3-os = { version = "0.1.0", default-features = false }
 
 [dev-dependencies]
 assert_matches = "1.5.0"
