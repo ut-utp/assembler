@@ -33,10 +33,7 @@ maintenance = { status = "actively-developed" }
 
 
 [dependencies]
-regex = "0.2.1"
 itertools = "0.8.2"
-num-traits = "0.2.11"
-annotate-snippets = { version = "0.8.0", features = ["color"] }
 clap = { version = "3.1.18", features = ["derive"] }
 chumsky = "0.8.0"
 ariadne = "0.1.5"
