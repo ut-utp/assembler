@@ -5,7 +5,7 @@ use chumsky::primitive::NoneOf;
 use chumsky::Stream;
 use lc3_isa::{Reg, Word};
 
-use crate::{Spanned, WithErrData};
+use crate::{SourceId, Spanned, WithErrData};
 use crate::LeniencyLevel;
 use crate::lex::{LiteralValue, Opcode, Token};
 
@@ -186,12 +186,13 @@ fn region(leniency: LeniencyLevel) -> impl Parser<Token, WithErrData<Region>, Er
 
 #[derive(Debug)]
 pub struct File {
+    pub(crate) id: SourceId,
     #[allow(dead_code)]
     pub(crate) before_first_orig: Spanned<Vec<Token>>, // TODO: check that this only contains newlines and comments (at least if strict)
     pub regions: Vec<WithErrData<Region>>
 }
 
-fn file(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<File>, Error = Simple<Token>> {
+fn file(id: SourceId, leniency: LeniencyLevel) -> impl Parser<Token, Spanned<File>, Error = Simple<Token>> {
     everything_until_orig()
         .map_with_span(|toks, span| (toks, span))
         .then(
@@ -200,14 +201,14 @@ fn file(leniency: LeniencyLevel) -> impl Parser<Token, Spanned<File>, Error = Si
                 .allow_trailing()
         )
         .then_ignore(end())
-        .map_with_span(|(before_first_orig, regions), span|
-            (File { before_first_orig, regions }, span))
+        .map_with_span(move |(before_first_orig, regions), span|
+            (File { id: id.clone(), before_first_orig, regions }, span))
 }
 
-pub fn parse(src: &str, tokens: Vec<Spanned<Token>>, leniency: LeniencyLevel) -> Result<Spanned<File>, Vec<Simple<Token>>> {
+pub fn parse(id: SourceId, src: &str, tokens: Vec<Spanned<Token>>, leniency: LeniencyLevel) -> Result<Spanned<File>, Vec<Simple<Token>>> {
     let len = src.chars().count();
     let (maybe_file, errors) =
-        file(leniency)
+        file(id, leniency)
             .parse_recovery_verbose(Stream::from_iter(len..len + 1, tokens.into_iter()));
 
     maybe_file.ok_or(errors)
@@ -226,7 +227,7 @@ mod tests {
     fn capture_tokens_before_first_orig_separately() {
         let source = "%some #random junk .ORIG x3000\nADD R0, R0, R0\n.END";
         let (tokens, _) = lex(source, LeniencyLevel::Lenient).unwrap();
-        let file = parse(source, tokens, LeniencyLevel::Lenient).unwrap();
+        let file = parse("<test>".to_string(), source, tokens, LeniencyLevel::Lenient).unwrap();
 
         assert_eq!((vec![Token::Invalid, Token::Invalid, Token::Label("JUNK".to_string())], 0..18),
                    file.0.before_first_orig);
@@ -236,7 +237,7 @@ mod tests {
     fn ignore_after_end() {
         let source = ".ORIG x3000\nADD R0, R0, R0\n.END then %some #random junk!";
         let (tokens, _) = lex(source, LeniencyLevel::Lenient).unwrap();
-        let file = parse(source, tokens, LeniencyLevel::Lenient).unwrap();
+        let file = parse("<test>".to_string(), source, tokens, LeniencyLevel::Lenient).unwrap();
 
         let f = file.0;
         assert_eq!((vec![], 0..5), f.before_first_orig); // TODO: probably doesn't need fixing, but span should probably be 0..0; find source of bug
@@ -253,7 +254,7 @@ mod tests {
     fn operand_error() {
         let source = ".ORIG x3000\nADD R0, R0, #OOPS; <- error\n.END";
         let (tokens, _) = lex(source, LeniencyLevel::Lenient).unwrap();
-        let file = parse(source, tokens, LeniencyLevel::Lenient).unwrap();
+        let file = parse("<test>".to_string(), source, tokens, LeniencyLevel::Lenient).unwrap();
 
         assert_eq!(vec![(Ok(Region {
                 orig: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11),
@@ -268,7 +269,7 @@ mod tests {
     fn label_error() {
         let source = ".ORIG x3000\nA%DDER ADD R0, R0, #1; <- error\n.END";
         let (tokens, _) = lex(source, LeniencyLevel::Lenient).unwrap();
-        let file = parse(source, tokens, LeniencyLevel::Lenient).unwrap();
+        let file = parse("<test>".to_string(), source, tokens, LeniencyLevel::Lenient).unwrap();
 
         assert_eq!(vec![(Ok(Region {
                 orig: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11),

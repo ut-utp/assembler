@@ -10,7 +10,7 @@ use lc3_shims::memory::FileBackedMemoryShim;
 use clap::{Parser};
 use lc3_isa::util::MemoryDump;
 use lc3_shims::memory::error::MemoryShimError;
-use lc3_assembler::{assemble, assemble_file, LeniencyLevel, parse_and_analyze, parse_and_analyze_file};
+use lc3_assembler::{assemble, assemble_file, LeniencyLevel, parse_and_analyze, parse_and_analyze_file, SourceId, sources};
 
 const MEM_DUMP_FILE_EXTENSION: &'static str = "mem";
 
@@ -91,18 +91,18 @@ fn as_() -> Result<(), Error> {
 
     let leniency = if args.strict { LeniencyLevel::Strict } else { LeniencyLevel::Lenient };
 
-    let src = fs::read_to_string(args.input.clone())?;
+    let cache = sources([args.input.clone()])?;
 
     if args.check {
-        match parse_and_analyze(&src, leniency) {
+        match parse_and_analyze_file(&args.input, leniency) {
             Ok(_) => {
                 println!("{}: No errors found.", args.input.display());
                 Ok(())
             }
-            Err(error) => print_errors(error, &src)
+            Err(error) => print_errors(error, cache)
         }
     } else {
-        match assemble(&src, leniency, args.no_os) {
+        match assemble_file(&args.input, leniency, args.no_os) {
             Ok(mem) => {
                 let mut output_path = args.input.clone();
                 output_path.set_extension(MEM_DUMP_FILE_EXTENSION);
@@ -111,15 +111,15 @@ fn as_() -> Result<(), Error> {
 
                 Ok(())
             }
-            Err(error) => print_errors(error, &src)
+            Err(error) => print_errors(error, cache)
         }
     }
 }
 
-fn print_errors(error: lc3_assembler::error::Error, src: &String) -> Result<(), Error> {
+fn print_errors(error: lc3_assembler::error::Error, mut cache: impl ariadne::Cache<SourceId>) -> Result<(), Error> {
     let print_results =
         error.report().into_iter()
-            .map(|report| report.eprint(Source::from(src)))
+            .map(|report| report.eprint(&mut cache))
             .collect::<Vec<_>>();
 
     for print_result in print_results {

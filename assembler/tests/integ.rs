@@ -298,7 +298,7 @@ fn multiple_output_test(input: &str, expected: &[Word]) {
 
 fn test(input: &str, orig: usize, expected_mem: &[Word]) {
     let src = input.to_string();
-    let mem = assemble(&src, LeniencyLevel::Lenient, true).unwrap();
+    let mem = assemble(&"<test>".to_string(), &src, LeniencyLevel::Lenient, true).unwrap();
 
     for i in 0..orig {
         assert_mem(&mem, i, 0x0000);
@@ -337,13 +337,13 @@ mod error {
                     #[test]
                     fn $test_name() {
                         let src = $source.to_string();
-                        match parse_and_analyze(&src, LeniencyLevel::Lenient) {
+                        match parse_and_analyze(&"<test>".to_string(), &src, LeniencyLevel::Lenient) {
                             Err(error) => {
                                 match error {
                                     Error::Multiple(errors) => {
                                         assert_eq!(errors.len(), 1, "Found too many args: {:?}", errors);
                                         match errors.get(0) {
-                                            Some(Error::Single(error))
+                                            Some(Error::Single(_, error))
                                             | Some(Error::Spanned(_, error)) => {
                                                 assert_matches!(error, $expected);
                                             }
@@ -470,7 +470,7 @@ mod error {
             $errors.iter()
                 .any(|error| {
                     match error {
-                        Error::Single(error)
+                        Error::Single(_, error)
                         | Error::Spanned(_, error) => {
                             matches!(error, $pattern)
                         }
@@ -494,7 +494,7 @@ mod error {
                     #[test]
                     fn $test_name() {
                         let src = $source.to_string();
-                        match parse_and_analyze(&src, LeniencyLevel::Lenient) {
+                        match parse_and_analyze(&"<test>".to_string(), &src, LeniencyLevel::Lenient) {
                             Err(error) => {
                                 match error {
                                     Error::Multiple(errors) => {

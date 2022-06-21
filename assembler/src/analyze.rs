@@ -6,7 +6,7 @@ use itertools::{concat, Itertools, zip};
 use lc3_isa::{Addr, Word};
 use crate::lex::{LexData, Opcode};
 use crate::parse::{File, Instruction, Operand, Region};
-use crate::{get, get_result, Span, Spanned, util, WithErrData};
+use crate::{get, get_result, SourceId, Spanned, SpanWithSource, util, WithErrData};
 use crate::assemble::calculate_offset;
 use crate::error::{Error, InvalidReferenceReason, OperandType, RegionPlacement, RoughAddr, SingleError};
 use crate::error::OperandType::*;
@@ -23,40 +23,39 @@ impl ParseErrorsAnalysis {
         Default::default()
     }
 
-    fn push_error(&mut self, single_error: SingleError, span: &Span) {
+    fn push_error(&mut self, single_error: SingleError, span: &SpanWithSource) {
         self.errors.push(Spanned(span.clone(), single_error));
     }
 }
 
 impl MutVisitor for ParseErrorsAnalysis {
-    fn enter_region_error(&mut self, span: &Span) {
+    fn enter_region_error(&mut self, span: &SpanWithSource) {
         self.push_error(BadRegion, span);
     }
-    fn enter_orig_error(&mut self, span: &Span) {
+    fn enter_orig_error(&mut self, span: &SpanWithSource) {
         self.push_error(BadOperands, span);
     }
-    fn enter_instruction_error(&mut self, span: &Span, _location: &LocationCounter) {
+    fn enter_instruction_error(&mut self, span: &SpanWithSource, _location: &LocationCounter) {
         self.push_error(BadInstruction, span);
     }
-    fn enter_label_error(&mut self, span: &Span, _location: &LocationCounter) {
+    fn enter_label_error(&mut self, span: &SpanWithSource, _location: &LocationCounter) {
         self.push_error(BadLabel, span);
     }
-    fn enter_opcode_error(&mut self, span: &Span, _location: &LocationCounter) {
+    fn enter_opcode_error(&mut self, span: &SpanWithSource, _location: &LocationCounter) {
         self.push_error(BadOpcode, span);
     }
-    fn enter_operands_error(&mut self, span: &Span, _location: &LocationCounter) {
+    fn enter_operands_error(&mut self, span: &SpanWithSource, _location: &LocationCounter) {
         self.push_error(BadOperands, span);
     }
-    fn enter_operand_error(&mut self, span: &Span, _location: &LocationCounter) {
+    fn enter_operand_error(&mut self, span: &SpanWithSource, _location: &LocationCounter) {
         self.push_error(BadOperand, span);
     }
 }
 
-
 #[derive(Default)]
 struct DuplicateLabelsAnalysis {
     errors: Vec<Error>,
-    labels: HashMap<String, Vec<Span>>,
+    labels: HashMap<String, Vec<SpanWithSource>>,
 }
 
 impl DuplicateLabelsAnalysis {
@@ -66,12 +65,12 @@ impl DuplicateLabelsAnalysis {
 }
 
 impl MutVisitor for DuplicateLabelsAnalysis {
-    fn exit_file(&mut self, _file: &File) {
+    fn exit_file(&mut self, _file: &File, _span: &SpanWithSource) {
         let DuplicateLabelsAnalysis { errors, labels } = self;
         labels.iter()
             .filter(|(_, occurrences)| occurrences.len() > 1)
             .map(|(label, occurrences)|
-                 Single(
+                 Single(occurrences.get(0).unwrap().id.clone(),
                      DuplicateLabel {
                          label: label.clone(),
                          occurrences: occurrences.clone()
@@ -80,7 +79,7 @@ impl MutVisitor for DuplicateLabelsAnalysis {
             .for_each(|e| errors.push(e));
     }
 
-    fn enter_label(&mut self, label: &String, span: &Span, _location: &LocationCounter) {
+    fn enter_label(&mut self, label: &String, span: &SpanWithSource, _location: &LocationCounter) {
         let occurrences = self.labels.entry(label.clone()).or_insert(Vec::new());
         occurrences.push(span.clone());
     }
@@ -143,7 +142,7 @@ const ORIG_ERROR_STARTING_ADDRESS_ESTIMATE: RoughAddr = 0x3000;
 const INSTRUCTION_ERROR_ADDRESSES_OCCUPIED_ESTIMATE: RoughAddr = 1;
 
 impl MutVisitor for SymbolTableAnalysis {
-    fn enter_label(&mut self, label: &String, _span: &Span, location: &LocationCounter) {
+    fn enter_label(&mut self, label: &String, _span: &SpanWithSource, location: &LocationCounter) {
         self.symbol_table.entry(label.clone())
             .and_modify(|e| *e = Err(InvalidSymbolError::Duplicated))
             .or_insert(
@@ -185,7 +184,7 @@ impl<'a> LabelOffsetBoundsAnalysis<'a> {
         }
     }
 
-    fn check_offset(&mut self, label: &String, span: &Span, width: u8, label_addr: RoughAddr, ref_addr: RoughAddr) {
+    fn check_offset(&mut self, label: &String, span: &SpanWithSource, width: u8, label_addr: RoughAddr, ref_addr: RoughAddr) {
         match calculate_offset(ref_addr, label_addr) {
             Err(_) => {
                 // TODO: make more precise. This case shouldn't be possible unless one of the estimated addresses is far out of bounds.
@@ -214,11 +213,11 @@ impl<'a> LabelOffsetBoundsAnalysis<'a> {
 }
 
 impl<'a> MutVisitor for LabelOffsetBoundsAnalysis<'a> {
-    fn enter_opcode_error(&mut self, _span: &Span, _location: &LocationCounter) {
+    fn enter_opcode_error(&mut self, _span: &SpanWithSource, _location: &LocationCounter) {
         self.expected_label = None;
     }
 
-    fn enter_opcode(&mut self, opcode: &Opcode, _span: &Span, _location: &LocationCounter) {
+    fn enter_opcode(&mut self, opcode: &Opcode, _span: &SpanWithSource, _location: &LocationCounter) {
         use Opcode::*;
         self.expected_label =
             match opcode {
@@ -231,13 +230,14 @@ impl<'a> MutVisitor for LabelOffsetBoundsAnalysis<'a> {
             }
     }
 
-    fn enter_operands(&mut self, operands: &Vec<WithErrData<Operand>>, _span: &Span, location: &LocationCounter) {
+    fn enter_operands(&mut self, operands: &Vec<WithErrData<Operand>>, span: &SpanWithSource, location: &LocationCounter) {
         if let Some(ExpectedLabel { width, position }) = &self.expected_label {
-            if let Some((Ok(Operand::Label(label)), op_span)) = operands.get(*position) {
+            if let Some((Ok(Operand::Label(label)), op_span_no_source)) = operands.get(*position) {
+                let op_span = (span.id.clone(), op_span_no_source.clone()).into();
                 match self.symbol_table.get(label) {
                     None => {
                         self.errors.push(
-                            Spanned(op_span.clone(),
+                            Spanned(op_span,
                                 InvalidLabelReference {
                                      label: label.clone(),
                                      reason: InvalidReferenceReason::Undefined
@@ -245,16 +245,16 @@ impl<'a> MutVisitor for LabelOffsetBoundsAnalysis<'a> {
                     }
                     Some(stv) => match stv {
                         Ok(addr) => {
-                            self.check_offset(label, op_span, *width, *addr as RoughAddr, location.value);
+                            self.check_offset(label, &op_span, *width, *addr as RoughAddr, location.value);
                         }
                         Err(ste) => match ste {
                             InvalidSymbolError::InvalidOrig { estimated_addr }
                             | InvalidSymbolError::PriorInvalidInstruction { estimated_addr } => {
-                                self.check_offset(label, op_span, *width, *estimated_addr, location.value);
+                                self.check_offset(label, &op_span, *width, *estimated_addr, location.value);
                             }
                             InvalidSymbolError::Duplicated => {
                                 self.errors.push(
-                                    Spanned(op_span.clone(),
+                                    Spanned(op_span,
                                         InvalidLabelReference {
                                             label: label.clone(),
                                             reason: InvalidReferenceReason::Duplicated
@@ -262,7 +262,7 @@ impl<'a> MutVisitor for LabelOffsetBoundsAnalysis<'a> {
                             }
                             InvalidSymbolError::OutOfBounds => {
                                 self.errors.push(
-                                    Spanned(op_span.clone(),
+                                    Spanned(op_span,
                                         InvalidLabelReference {
                                             label: label.clone(),
                                             reason: InvalidReferenceReason::OutOfBounds
@@ -289,7 +289,7 @@ impl OperandTypesAnalysis {
         Default::default()
     }
 
-    fn check_operands(&mut self, operands: &Vec<WithErrData<Operand>>, span: &Span) {
+    fn check_operands(&mut self, operands: &Vec<WithErrData<Operand>>, span: &SpanWithSource) {
         if let Some(expected) = &self.expected_operands {
             // TODO: create longest common subsequence diff for more precise errors
             let ops_len = operands.len();
@@ -297,7 +297,8 @@ impl OperandTypesAnalysis {
             if ops_len != exp_len {
                 self.errors.push(Spanned(span.clone(), WrongNumberOfOperands { expected: exp_len, actual: ops_len }))
             } else {
-                for ((op_res, op_span), exp_ty) in zip(operands, expected) {
+                for ((op_res, op_span_no_source), exp_ty) in zip(operands, expected) {
+                    let op_span = (span.id.clone(), op_span_no_source.clone()).into();
                     if let Ok(op) = op_res {
                         if !exp_ty.check(op) {
                             let actual = if let Operand::NumberLiteral(value) = op {
@@ -305,7 +306,7 @@ impl OperandTypesAnalysis {
                             } else {
                                 OperandType::of(op)
                             };
-                            self.errors.push(Spanned(op_span.clone(), OperandTypeMismatch { expected: exp_ty.clone(), actual }));
+                            self.errors.push(Spanned(op_span, OperandTypeMismatch { expected: exp_ty.clone(), actual }));
                         }
                     }
                 }
@@ -319,16 +320,16 @@ fn orig_expected_operands() -> Vec<OperandType> {
 }
 
 impl MutVisitor for OperandTypesAnalysis {
-    fn enter_orig(&mut self, orig: &Vec<WithErrData<Operand>>, span: &Span, _location: &LocationCounter) {
+    fn enter_orig(&mut self, orig: &Vec<WithErrData<Operand>>, span: &SpanWithSource, _location: &LocationCounter) {
         self.expected_operands = Some(orig_expected_operands());
         self.check_operands(orig, span);
     }
 
-    fn enter_opcode_error(&mut self, _span: &Span, _location: &LocationCounter) {
+    fn enter_opcode_error(&mut self, _span: &SpanWithSource, _location: &LocationCounter) {
         self.expected_operands = None;
     }
 
-    fn enter_opcode(&mut self, opcode: &Opcode, _span: &Span, _location: &LocationCounter) {
+    fn enter_opcode(&mut self, opcode: &Opcode, _span: &SpanWithSource, _location: &LocationCounter) {
         use Opcode::*;
         self.expected_operands = Some(
             match opcode {
@@ -354,7 +355,7 @@ impl MutVisitor for OperandTypesAnalysis {
         );
     }
 
-    fn enter_operands(&mut self, operands: &Vec<WithErrData<Operand>>, span: &Span, _location: &LocationCounter) {
+    fn enter_operands(&mut self, operands: &Vec<WithErrData<Operand>>, span: &SpanWithSource, _location: &LocationCounter) {
         self.check_operands(operands, span);
     }
 }
@@ -379,16 +380,16 @@ impl ObjectPlacementAnalysis {
 }
 
 impl MutVisitor for ObjectPlacementAnalysis {
-    fn exit_file(&mut self, _file: &File) {
+    fn exit_file(&mut self, _file: &File, span: &SpanWithSource) {
         self.object_spans.sort_unstable_by_key(|span| span.span_in_memory.start);
         for (op1, op2) in self.object_spans.iter().tuple_windows() {
             if op2.span_in_memory.start < op1.span_in_memory.end {
-                self.errors.push(Single(SingleError::regions_overlap(op1.clone(), op2.clone())));
+                self.errors.push(Single(span.id.clone(), SingleError::regions_overlap(op1.clone(), op2.clone())));
             }
         }
     }
 
-    fn exit_region(&mut self, _region: &Region, span: &Span, location: &LocationCounter) {
+    fn exit_region(&mut self, _region: &Region, span: &SpanWithSource, location: &LocationCounter) {
         self.object_spans.push(
             RegionPlacement {
                 position_in_file: self.object_index,
@@ -398,7 +399,7 @@ impl MutVisitor for ObjectPlacementAnalysis {
         self.object_index += 1;
     }
 
-    fn exit_orig(&mut self, _orig: &Vec<WithErrData<Operand>>, _span: &Span, location: &LocationCounter) {
+    fn exit_orig(&mut self, _orig: &Vec<WithErrData<Operand>>, _span: &SpanWithSource, location: &LocationCounter) {
         self.last_start = location.value;
     }
 }
@@ -440,41 +441,43 @@ impl LocationCounterState {
     }
 }
 
-fn visit(v: &mut impl MutVisitor, file: &File) {
-    v.enter_file(file);
+fn visit(v: &mut impl MutVisitor, file: &File, span: &SpanWithSource) {
+    v.enter_file(file, span);
     for region in file.regions.iter() {
-        visit_region(v, region);
+        visit_region(v, file.id.clone(), region);
     }
-    v.exit_file(file);
+    v.exit_file(file, span);
 }
 
-fn visit_region(v: &mut impl MutVisitor, region: &WithErrData<Region>) {
+fn visit_region(v: &mut impl MutVisitor, id: SourceId, region: &WithErrData<Region>) {
     let (region_res, span) = region;
+    let span = (id.clone(), span.clone()).into();
     match region_res {
-        Err(_) => { v.enter_region_error(span); }
+        Err(_) => { v.enter_region_error(&span); }
         Ok(r) => {
-            v.enter_region(r, span);
+            v.enter_region(r, &span);
 
             let mut location_counter = LocationCounter::new();
 
             let Region { orig, instructions } = r;
-            visit_orig(v, orig, &mut location_counter);
+            visit_orig(v, id.clone(), orig, &mut location_counter);
             for instruction in instructions {
-                visit_instruction(v, instruction, &mut location_counter);
+                visit_instruction(v, id.clone(), instruction, &mut location_counter);
             }
 
-            v.exit_region(r, span, &mut location_counter);
+            v.exit_region(r, &span, &mut location_counter);
         }
     }
 }
 
-fn visit_orig(v: &mut impl MutVisitor, orig: &WithErrData<Vec<WithErrData<Operand>>>, location_counter: &mut LocationCounter) {
+fn visit_orig(v: &mut impl MutVisitor, id: SourceId, orig: &WithErrData<Vec<WithErrData<Operand>>>, location_counter: &mut LocationCounter) {
     let (orig_res, span) = orig;
+    let span = (id.clone(), span.clone()).into();
     match orig_res {
         Err(_) => {
             location_counter.value = ORIG_ERROR_STARTING_ADDRESS_ESTIMATE;
             location_counter.state.if_valid_set(LocationCounterState::InvalidOrig);
-            v.enter_orig_error(span);
+            v.enter_orig_error(&span);
         }
         Ok(o) => {
             location_counter.value = get(o, 0)
@@ -484,35 +487,36 @@ fn visit_orig(v: &mut impl MutVisitor, orig: &WithErrData<Vec<WithErrData<Operan
                     ORIG_ERROR_STARTING_ADDRESS_ESTIMATE
                 });
 
-            v.enter_orig( o, span, location_counter);
+            v.enter_orig( o, &span, location_counter);
             for operand in o {
-                visit_operand(v, operand, location_counter);
+                visit_operand(v, id.clone(), operand, location_counter);
             }
 
-            v.exit_orig(o, span, location_counter);
+            v.exit_orig(o, &span, location_counter);
         }
     }
 }
 
-fn visit_instruction(v: &mut impl MutVisitor, instruction: &WithErrData<Instruction>, location_counter: &mut LocationCounter) {
+fn visit_instruction(v: &mut impl MutVisitor, id: SourceId, instruction: &WithErrData<Instruction>, location_counter: &mut LocationCounter) {
     let (inst_res, span) = instruction;
+    let span = (id.clone(), span.clone()).into();
     match inst_res {
         Err(_) => {
-            v.enter_instruction_error(span, location_counter);
+            v.enter_instruction_error(&span, location_counter);
             location_counter.value += INSTRUCTION_ERROR_ADDRESSES_OCCUPIED_ESTIMATE;
             location_counter.state.if_valid_set(LocationCounterState::InvalidInstruction);
         }
         Ok(i) => {
-            v.enter_instruction(i, span, location_counter);
+            v.enter_instruction(i, &span, location_counter);
 
             let Instruction { label, opcode, operands } = i;
             if let Some(l) = label {
-                visit_label(v, l, location_counter);
+                visit_label(v, id.clone(), l, location_counter);
             }
-            visit_opcode(v, opcode, location_counter);
-            visit_operands(v, operands, location_counter);
+            visit_opcode(v, id.clone(), opcode, location_counter);
+            visit_operands(v, id.clone(), operands, location_counter);
 
-            v.exit_instruction(i, span, location_counter);
+            v.exit_instruction(i, &span, location_counter);
 
             location_counter.value += i.addresses_occupied()
                 .unwrap_or_else(|_| {
@@ -523,83 +527,89 @@ fn visit_instruction(v: &mut impl MutVisitor, instruction: &WithErrData<Instruct
     }
 }
 
-fn visit_label(v: &mut impl MutVisitor, label: &WithErrData<String>, location_counter: &mut LocationCounter) {
+fn visit_label(v: &mut impl MutVisitor, id: SourceId, label: &WithErrData<String>, location_counter: &mut LocationCounter) {
     let (label_res, span) = label;
+    let span = (id, span.clone()).into();
     match label_res {
-        Err(_) => { v.enter_label_error(span, location_counter); }
-        Ok(l) => { v.enter_label( l, span, location_counter); }
+        Err(_) => { v.enter_label_error(&span, location_counter); }
+        Ok(l) => { v.enter_label( l, &span, location_counter); }
     }
 }
 
-fn visit_opcode(v: &mut impl MutVisitor, opcode: &WithErrData<Opcode>, location_counter: &mut LocationCounter) {
+fn visit_opcode(v: &mut impl MutVisitor, id: SourceId, opcode: &WithErrData<Opcode>, location_counter: &mut LocationCounter) {
     let (opcode_res, span) = opcode;
+    let span = (id, span.clone()).into();
     match opcode_res {
-        Err(_) => { v.enter_opcode_error(span, location_counter); }
-        Ok(oc) => { v.enter_opcode( oc, span, location_counter); }
+        Err(_) => { v.enter_opcode_error(&span, location_counter); }
+        Ok(oc) => { v.enter_opcode( oc, &span, location_counter); }
     }
 }
 
-fn visit_operands(v: &mut impl MutVisitor, operands: &WithErrData<Vec<WithErrData<Operand>>>, location_counter: &mut LocationCounter) {
+fn visit_operands(v: &mut impl MutVisitor, id: SourceId, operands: &WithErrData<Vec<WithErrData<Operand>>>, location_counter: &mut LocationCounter) {
     let (ops_res, span) = operands;
+    let span = (id.clone(), span.clone()).into();
     match ops_res {
-        Err(_) => { v.enter_operands_error(span, location_counter); }
+        Err(_) => { v.enter_operands_error(&span, location_counter); }
         Ok(o) => {
-            v.enter_operands( o, span, location_counter);
+            v.enter_operands( o, &span, location_counter);
             for operand in o {
-                visit_operand(v, operand, location_counter);
+                visit_operand(v, id.clone(), operand, location_counter);
             }
         }
     }
 }
 
-fn visit_operand(v: &mut impl MutVisitor, operand: &WithErrData<Operand>, location_counter: &mut LocationCounter) {
+fn visit_operand(v: &mut impl MutVisitor, id: SourceId, operand: &WithErrData<Operand>, location_counter: &mut LocationCounter) {
     let (op_res, span) = operand;
+    let span = (id, span.clone()).into();
     match op_res {
-        Err(_) => { v.enter_operand_error(span, location_counter); }
-        Ok(o) => { v.enter_operand( o, span, location_counter); }
+        Err(_) => { v.enter_operand_error(&span, location_counter); }
+        Ok(o) => { v.enter_operand( o, &span, location_counter); }
     }
 }
 
 trait MutVisitor {
-    fn enter_file(&mut self, _file: &File) {}
-    fn exit_file(&mut self, _file: &File) {}
+    fn enter_file(&mut self, _file: &File, _span: &SpanWithSource) {}
+    fn exit_file(&mut self, _file: &File, _span: &SpanWithSource) {}
 
-    fn enter_region_error(&mut self, _span: &Span) {}
-    fn enter_region(&mut self, _region: &Region, _span: &Span) {}
-    fn exit_region(&mut self, _region: &Region, _span: &Span, _location: &LocationCounter) {}
+    fn enter_region_error(&mut self, _span: &SpanWithSource) {}
+    fn enter_region(&mut self, _region: &Region, _span: &SpanWithSource) {}
+    fn exit_region(&mut self, _region: &Region, _span: &SpanWithSource, _location: &LocationCounter) {}
 
-    fn enter_orig_error(&mut self, _span: &Span) {}
-    fn enter_orig(&mut self, _orig: &Vec<WithErrData<Operand>>, _span: &Span, _location: &LocationCounter) {}
-    fn exit_orig(&mut self, _orig: &Vec<WithErrData<Operand>>, _span: &Span, _location: &LocationCounter) {}
+    fn enter_orig_error(&mut self, _span: &SpanWithSource) {}
+    fn enter_orig(&mut self, _orig: &Vec<WithErrData<Operand>>, _span: &SpanWithSource, _location: &LocationCounter) {}
+    fn exit_orig(&mut self, _orig: &Vec<WithErrData<Operand>>, _span: &SpanWithSource, _location: &LocationCounter) {}
 
-    fn enter_instruction_error(&mut self, _span: &Span, _location: &LocationCounter) {}
-    fn enter_instruction(&mut self, _instruction: &Instruction, _span: &Span, _location: &LocationCounter) {}
-    fn exit_instruction(&mut self, _instruction: &Instruction, _span: &Span, _location: &LocationCounter) {}
+    fn enter_instruction_error(&mut self, _span: &SpanWithSource, _location: &LocationCounter) {}
+    fn enter_instruction(&mut self, _instruction: &Instruction, _span: &SpanWithSource, _location: &LocationCounter) {}
+    fn exit_instruction(&mut self, _instruction: &Instruction, _span: &SpanWithSource, _location: &LocationCounter) {}
 
-    fn enter_label_error(&mut self, _span: &Span, _location: &LocationCounter) {}
-    fn enter_label(&mut self, _label: &String, _span: &Span, _location: &LocationCounter) {}
+    fn enter_label_error(&mut self, _span: &SpanWithSource, _location: &LocationCounter) {}
+    fn enter_label(&mut self, _label: &String, _span: &SpanWithSource, _location: &LocationCounter) {}
 
-    fn enter_opcode_error(&mut self, _span: &Span, _location: &LocationCounter) {}
-    fn enter_opcode(&mut self, _opcode: &Opcode, _span: &Span, _location: &LocationCounter) {}
+    fn enter_opcode_error(&mut self, _span: &SpanWithSource, _location: &LocationCounter) {}
+    fn enter_opcode(&mut self, _opcode: &Opcode, _span: &SpanWithSource, _location: &LocationCounter) {}
 
-    fn enter_operands_error(&mut self, _span: &Span, _location: &LocationCounter) {}
-    fn enter_operands(&mut self, _operands: &Vec<WithErrData<Operand>>, _span: &Span, _location: &LocationCounter) {}
+    fn enter_operands_error(&mut self, _span: &SpanWithSource, _location: &LocationCounter) {}
+    fn enter_operands(&mut self, _operands: &Vec<WithErrData<Operand>>, _span: &SpanWithSource, _location: &LocationCounter) {}
 
-    fn enter_operand_error(&mut self, _span: &Span, _location: &LocationCounter) {}
-    fn enter_operand(&mut self, _operand: &Operand, _span: &Span, _location: &LocationCounter) {}
+    fn enter_operand_error(&mut self, _span: &SpanWithSource, _location: &LocationCounter) {}
+    fn enter_operand(&mut self, _operand: &Operand, _span: &SpanWithSource, _location: &LocationCounter) {}
 }
 
 
-fn analyze_lex_data(lex_data: &LexData, file_span: &Span) -> Vec<Error> {
+fn analyze_lex_data(lex_data: &LexData, file_span: &SpanWithSource) -> Vec<Error> {
     let mut errors = Vec::new();
     if lex_data.no_tokens {
-        errors.push(Single(NoTokens))
+        errors.push(Single(file_span.id.clone(), NoTokens))
     } else {
         if !lex_data.orig_present {
-            errors.push(Spanned(file_span.start..file_span.start, NoOrig));
+            let start_span = (file_span.id.clone(), file_span.span.start..file_span.span.start).into();
+            errors.push(Spanned(start_span, NoOrig));
         }
         if !lex_data.end_present {
-            errors.push(Spanned(file_span.end..file_span.end, NoEnd));
+            let end_span = (file_span.id.clone(), file_span.span.end..file_span.span.end).into();
+            errors.push(Spanned(end_span, NoEnd));
         }
     }
     errors
@@ -608,25 +618,26 @@ fn analyze_lex_data(lex_data: &LexData, file_span: &Span) -> Vec<Error> {
 pub fn validate(lex_data: &LexData, file_spanned: &Spanned<File>) -> Vec<Error> {
     let (file, file_span) = file_spanned;
 
-    let errors_from_lex_data = analyze_lex_data(&lex_data, file_span);
+    let file_span_with_source = (file.id.clone(), file_span.clone()).into();
+    let errors_from_lex_data = analyze_lex_data(&lex_data, &file_span_with_source);
 
     let mut pe = ParseErrorsAnalysis::new();
-    visit(&mut pe, file);
+    visit(&mut pe, file, &file_span_with_source);
 
     let mut dl = DuplicateLabelsAnalysis::new();
-    visit(&mut dl, file);
+    visit(&mut dl, file, &file_span_with_source);
 
     let mut ot = OperandTypesAnalysis::new();
-    visit(&mut ot, file);
+    visit(&mut ot, file, &file_span_with_source);
 
     let mut st = SymbolTableAnalysis::new();
-    visit(&mut st, file);
+    visit(&mut st, file, &file_span_with_source);
 
     let mut lob = LabelOffsetBoundsAnalysis::new(&st.symbol_table);
-    visit(&mut lob, file);
+    visit(&mut lob, file, &file_span_with_source);
 
     let mut op = ObjectPlacementAnalysis::new();
-    visit(&mut op, file);
+    visit(&mut op, file, &file_span_with_source);
 
     concat([
         errors_from_lex_data,

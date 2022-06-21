@@ -2,67 +2,76 @@ use ariadne::{Label, Report, ReportBuilder, ReportKind};
 use std::cmp::max;
 use lc3_isa::SignedWord;
 use std::fmt::{Display, Formatter};
-use crate::{Span, util};
+use crate::{SourceId, Span, SpanWithSource, util};
 use crate::lex;
-use crate::lex::LiteralValue;
+use crate::lex::{LiteralValue};
 use crate::parse::Operand;
 use std::ops::Range;
 
 
-impl From<std::io::Error> for SingleError {
-    fn from(error: std::io::Error) -> Self {
-        Io(error)
-    }
+#[derive(Debug)]
+pub enum Error {
+    Single(SourceId, SingleError),
+    Spanned(SpanWithSource, SingleError),
+    Multiple(Vec<Error>),
 }
 
-impl<E> From<Vec<E>> for Error
-    where E: Into<Error>
+pub(crate) fn into_multiple<E>(id: SourceId, es: Vec<E>) -> Error
+    where (SourceId, E): Into<Error>
 {
-    fn from(errors: Vec<E>) -> Self {
-        let es = errors.into_iter()
-            .map(|e| e.into())
+    let errors =
+        es.into_iter()
+            .map(|e| (id.clone(), e).into())
             .collect();
+    Error::Multiple(errors)
+}
+
+impl From<Vec<Error>> for Error
+{
+    fn from(es: Vec<Self>) -> Self {
         Error::Multiple(es)
     }
 }
 
-impl<E> From<E> for Error
+impl<E> From<(SourceId, E)> for Error
     where E: Into<SingleError>
 {
-    fn from(error: E) -> Self {
-        Error::Single(error.into())
+    fn from((id, e): (SourceId, E)) -> Self {
+        Error::Single(id, e.into())
     }
 }
 
-impl From<chumsky::error::Simple<char>> for SingleError {
-    fn from(error: chumsky::error::Simple<char>) -> Self {
-        Lex(error)
+impl From<std::io::Error> for SingleError {
+    fn from(e: std::io::Error) -> Self { Io(e) }
+}
+
+impl From<(SourceId, chumsky::error::Simple<char>)> for Error {
+    fn from((id, e): (SourceId, chumsky::error::Simple<char>)) -> Self {
+        let span = SpanWithSource { id, span: e.span() };
+        Error::Spanned(span, Lex(e))
     }
 }
 
-impl From<chumsky::error::Simple<lex::Token>> for SingleError {
-    fn from(error: chumsky::error::Simple<lex::Token>) -> Self {
-        Parse(error)
+impl From<(SourceId, chumsky::error::Simple<lex::Token>)> for Error {
+    fn from((id, e): (SourceId, chumsky::error::Simple<lex::Token>)) -> Self {
+        let span = SpanWithSource { id, span: e.span() };
+        Error::Spanned(span, Parse(e))
     }
-}
-
-#[derive(Debug)]
-pub enum Error {
-    Single(SingleError),
-    Spanned(Span, SingleError),
-    Multiple(Vec<Error>),
 }
 
 impl Error {
-    pub fn report(self) -> Vec<Report> {
+    pub fn report(self) -> Vec<Report<SpanWithSource>> {
         use Error::*;
         match self {
-            Single(error) => vec![report_single(error).finish()],
-            Spanned(span, error) => vec![
-                report_single(error)
-                    .with_label(Label::new(span).with_message("here"))
-                    .finish()
-            ],
+            Single(id, error) => vec![report_single(id, None, error).finish()],
+            Spanned(span, error) => {
+                let SpanWithSource { id, span: s } = span.clone();
+                vec![
+                    report_single(id, Some(s), error)
+                        .with_label(Label::new(span).with_message("here"))
+                        .finish()
+                ]
+            }
             Multiple(errors) =>
                 errors.into_iter()
                     .flat_map(|e| e.report())
@@ -84,6 +93,8 @@ pub enum SingleError {
     Link,
     Layer,
 
+    TooManyInputs,
+
     BadRegion,
     BadInstruction,
     BadLabel,
@@ -92,7 +103,7 @@ pub enum SingleError {
     BadOperand,
     WrongNumberOfOperands { expected: usize, actual: usize },
     OperandTypeMismatch { expected: OperandType, actual: OperandType },
-    DuplicateLabel { label: String, occurrences: Vec<Span>, },
+    DuplicateLabel { label: String, occurrences: Vec<SpanWithSource>, },
     InvalidLabelReference { label: String, reason: InvalidReferenceReason },
     LabelTooDistant { label: String, width: u8, est_ref_pos: RoughAddr, est_label_pos: RoughAddr, offset: SignedWord },
     RegionsOverlap { placement1: RegionPlacement, placement2: RegionPlacement },
@@ -171,6 +182,7 @@ impl SingleError {
             Assemble => "unexpected assembly error".to_string(),
             Link => "unexpected link error".to_string(),
             Layer => "unexpected layering error".to_string(),
+            TooManyInputs => "too many input files provided".to_string(),
         }
     }
 }
@@ -182,8 +194,9 @@ fn min_signed_hex_digits_required(n: i32) -> u8 {
 }
 
 
-fn report_single(error: SingleError) -> ReportBuilder<Span> {
-    let mut r = Report::build(ReportKind::Error, (), 0)
+fn report_single(id: SourceId, span: Option<Span>, error: SingleError) -> ReportBuilder<SpanWithSource> {
+    let mut r: ReportBuilder<SpanWithSource> =
+        Report::build(ReportKind::Error, id, span.map(|s| s.start).unwrap_or(0))
         .with_message(error.message());
     match error {
         DuplicateLabel { occurrences, .. } => {
@@ -367,7 +380,7 @@ impl OperandType {
 #[derive(Clone, Debug)]
 pub struct RegionPlacement {
     pub(crate) position_in_file: usize,
-    pub(crate) span_in_file: Span,
+    pub(crate) span_in_file: SpanWithSource,
     pub(crate) span_in_memory: Range<RoughAddr>,
 }
 
