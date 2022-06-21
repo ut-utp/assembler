@@ -2,7 +2,8 @@
 name = "lc3-assembler"
 version = "0.1.0"
 authors = ["UT UTP <ut.utp.group@gmail.com>"]
-edition = "2018"
+edition = "2021"
+rust-version = "1.56.1"
 
 workspace = ".."
 
@@ -33,15 +34,15 @@ maintenance = { status = "actively-developed" }
 
 
 [dependencies]
-itertools = "0.8.2"
-clap = { version = "3.1.18", features = ["derive"] }
-chumsky = "0.8.0"
-ariadne = "0.1.5"
-quote = "1.0.18"
+itertools = "0.10"
+clap = { version = "3.1", features = ["derive"] }
+chumsky = "0.8"
+ariadne = "0.1"
+quote = "1"
 
 lc3-isa = { version = "0.1.0", default-features = false }
 lc3-shims = { version = "0.1.0", default-features = false }
 lc3-os = { version = "0.1.0", default-features = false }
 
 [dev-dependencies]
-assert_matches = "1.5.0"
+assert_matches = "1.5"
