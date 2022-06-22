@@ -121,6 +121,10 @@ pub(crate) enum Instruction {
 }
 
 impl Instruction {
+    fn new_trap(trap_vec: u8) -> Self {
+        Self::Trap { trap_vec }
+    }
+
     fn addresses_occupied(&self) -> Addr {
         match self {
             Instruction::Blkw { size } => *size,
@@ -154,112 +158,53 @@ pub(crate) enum ObjectWord {
 }
 
 
+macro_rules! try_map_operands {
+    ($operands:expr => $variant:ident { $($field:ident),*$(,)* })
+    =>
+    {
+        {
+            let mut os = $operands.into_iter();
+            let i = Instruction::$variant {
+                $($field: try_map(os.next())?,)*
+            };
+            Ok(i)
+        }
+    }
+}
+
 impl TryFrom<(WithErrData<Opcode>, WithErrData<Vec<WithErrData<Operand>>>)> for Instruction {
     type Error = ();
+
 
     fn try_from((raw_opcode, raw_operands): (WithErrData<Opcode>, WithErrData<Vec<WithErrData<Operand>>>)) -> Result<Self, Self::Error> {
         let operands = result(raw_operands)?;
         match result(raw_opcode)? {
-            Opcode::Add => {
-                let mut os = operands.into_iter();
-                let dr = try_map(os.next())?;
-                let sr1 = try_map(os.next())?;
-                let sr2_or_imm5 = try_map(os.next())?;
-                Ok(Instruction::Add { dr, sr1, sr2_or_imm5 })
-            }
-            Opcode::And => {
-                let mut os = operands.into_iter();
-                let dr = try_map(os.next())?;
-                let sr1 = try_map(os.next())?;
-                let sr2_or_imm5 = try_map(os.next())?;
-                Ok(Instruction::And { dr, sr1, sr2_or_imm5 })
-            }
+            Opcode::Add  => try_map_operands!( operands => Add { dr, sr1, sr2_or_imm5 } ),
+            Opcode::And  => try_map_operands!( operands => And { dr, sr1, sr2_or_imm5 } ),
             Opcode::Br(cond_codes) => {
                 let mut os = operands.into_iter();
                 let pc_offset9 = try_map(os.next())?;
                 Ok(Instruction::Br { cond_codes, pc_offset9 })
             }
-            Opcode::Jmp => {
-                let mut os = operands.into_iter();
-                let base = try_map(os.next())?;
-                Ok(Instruction::Jmp { base })
-            }
-            Opcode::Jsr => {
-                let mut os = operands.into_iter();
-                let pc_offset11 = try_map(os.next())?;
-                Ok(Instruction::Jsr { pc_offset11 })
-            }
-            Opcode::Jsrr => {
-                let mut os = operands.into_iter();
-                let base = try_map(os.next())?;
-                Ok(Instruction::Jsrr { base })
-            }
-            Opcode::Ld => {
-                let mut os = operands.into_iter();
-                let dr = try_map(os.next())?;
-                let pc_offset9 = try_map(os.next())?;
-                Ok(Instruction::Ld { dr, pc_offset9 })
-            }
-            Opcode::Ldi => {
-                let mut os = operands.into_iter();
-                let dr = try_map(os.next())?;
-                let pc_offset9 = try_map(os.next())?;
-                Ok(Instruction::Ldi { dr, pc_offset9 })
-            }
-            Opcode::Ldr => {
-                let mut os = operands.into_iter();
-                let dr = try_map(os.next())?;
-                let base = try_map(os.next())?;
-                let offset6 = try_map(os.next())?;
-                Ok(Instruction::Ldr { dr, base, offset6 })
-            }
-            Opcode::Lea => {
-                let mut os = operands.into_iter();
-                let dr = try_map(os.next())?;
-                let pc_offset9 = try_map(os.next())?;
-                Ok(Instruction::Lea { dr, pc_offset9 })
-            }
-            Opcode::Not => {
-                let mut os = operands.into_iter();
-                let dr = try_map(os.next())?;
-                let sr = try_map(os.next())?;
-                Ok(Instruction::Not { dr, sr })
-            }
-            Opcode::Ret => Ok(Instruction::Ret),
-            Opcode::Rti => Ok(Instruction::Rti),
-            Opcode::St => {
-                let mut os = operands.into_iter();
-                let sr = try_map(os.next())?;
-                let pc_offset9 = try_map(os.next())?;
-                Ok(Instruction::St { sr, pc_offset9 })
-            }
-            Opcode::Sti => {
-                let mut os = operands.into_iter();
-                let sr = try_map(os.next())?;
-                let pc_offset9 = try_map(os.next())?;
-                Ok(Instruction::Sti { sr, pc_offset9 })
-            }
-            Opcode::Str => {
-                let mut os = operands.into_iter();
-                let sr = try_map(os.next())?;
-                let base = try_map(os.next())?;
-                let offset6 = try_map(os.next())?;
-                Ok(Instruction::Str { sr, base, offset6 })
-            }
-            Opcode::Trap => {
-                let mut os = operands.into_iter();
-                let trap_vec = try_map(os.next())?;
-                Ok(Instruction::Trap { trap_vec })
-            }
+            Opcode::Jmp  => try_map_operands!( operands => Jmp { base }),
+            Opcode::Jsr  => try_map_operands!( operands => Jsr { pc_offset11 }),
+            Opcode::Jsrr => try_map_operands!( operands => Jsrr { base }),
+            Opcode::Ld   => try_map_operands!( operands => Ld { dr, pc_offset9 }),
+            Opcode::Ldi  => try_map_operands!( operands => Ldi { dr, pc_offset9 }),
+            Opcode::Ldr  => try_map_operands!( operands => Ldr { dr, base, offset6 }),
+            Opcode::Lea  => try_map_operands!( operands => Lea { dr, pc_offset9 }),
+            Opcode::Not  => try_map_operands!( operands => Not { dr, sr }),
+            Opcode::Ret  => Ok(Instruction::Ret),
+            Opcode::Rti  => Ok(Instruction::Rti),
+            Opcode::St   => try_map_operands!( operands => St { sr, pc_offset9 }),
+            Opcode::Sti  => try_map_operands!( operands => Sti { sr, pc_offset9 }),
+            Opcode::Str  => try_map_operands!( operands => Str { sr, base, offset6 }),
+            Opcode::Trap => try_map_operands!( operands => Trap { trap_vec }),
 
             // TODO: improve error
             Opcode::Orig => Err(()),
 
-            Opcode::Fill => {
-                let mut os = operands.into_iter();
-                let value = try_map(os.next())?;
-                Ok(Instruction::Fill { value })
-            }
+            Opcode::Fill => try_map_operands!( operands => Fill { value }),
             Opcode::Blkw => {
                 let mut os = operands.into_iter();
                 let size = try_result(os.next())?.get_unqualified_number_value().ok_or(())?;
@@ -271,12 +216,12 @@ impl TryFrom<(WithErrData<Opcode>, WithErrData<Vec<WithErrData<Operand>>>)> for 
                 Ok(Instruction::Stringz { string })
             }
 
-            Opcode::Getc  => Ok(Instruction::Trap { trap_vec: 0x20 }),
-            Opcode::Out   => Ok(Instruction::Trap { trap_vec: 0x21 }),
-            Opcode::Puts  => Ok(Instruction::Trap { trap_vec: 0x22 }),
-            Opcode::In    => Ok(Instruction::Trap { trap_vec: 0x23 }),
-            Opcode::Putsp => Ok(Instruction::Trap { trap_vec: 0x24 }),
-            Opcode::Halt  => Ok(Instruction::Trap { trap_vec: 0x25 }),
+            Opcode::Getc  => Ok(Instruction::new_trap(0x20)),
+            Opcode::Out   => Ok(Instruction::new_trap(0x21)),
+            Opcode::Puts  => Ok(Instruction::new_trap(0x22)),
+            Opcode::In    => Ok(Instruction::new_trap(0x23)),
+            Opcode::Putsp => Ok(Instruction::new_trap(0x24)),
+            Opcode::Halt  => Ok(Instruction::new_trap(0x25)),
         }
     }
 }
@@ -303,126 +248,74 @@ pub(crate) fn calculate_offset(location_counter: i32, label_address: i32) -> Res
     (label_address - (location_counter + 1)).try_into()
 }
 
+
+impl From<lc3_isa::Instruction> for AssemblyResult {
+    fn from(i: lc3_isa::Instruction) -> Self {
+        AssemblyResult::SingleObjectWord(ObjectWord::Value(i.into()))
+    }
+}
+
+
 pub(crate) fn assemble_instruction(symbol_table: &SymbolTable, location_counter: &Addr, instruction: Instruction) -> Result<AssemblyResult, TryFromIntError> {
     use AssemblyResult::*;
     use ObjectWord::*;
 
-    let res = match instruction {
-        Instruction::Add { dr, sr1, sr2_or_imm5 } => {
-            let word =
-                match sr2_or_imm5 {
-                    Sr2OrImm5::Sr2(sr2) => lc3_isa::Instruction::new_add_reg(dr, sr1, sr2),
-                    Sr2OrImm5::Imm5(imm5) => lc3_isa::Instruction::new_add_imm(dr, sr1, imm5),
-                }.into();
-            SingleObjectWord(Value(word))
-        }
-        Instruction::And { dr, sr1, sr2_or_imm5 } => {
-            let word =
-                match sr2_or_imm5 {
-                    Sr2OrImm5::Sr2(sr2) => lc3_isa::Instruction::new_and_reg(dr, sr1, sr2),
-                    Sr2OrImm5::Imm5(imm5) => lc3_isa::Instruction::new_and_imm(dr, sr1, imm5),
-                }.into();
-            SingleObjectWord(Value(word))
-        }
-        Instruction::Br { cond_codes: ConditionCodes { n, z, p }, pc_offset9 } => {
-            match pc_offset9 {
-                PcOffset::Number(sw) => SingleObjectWord(Value(lc3_isa::Instruction::new_br(n, z, p, sw).into())),
+    macro_rules! assemble_pc_offset {
+        ($pc_offset:ident => $new_i:ident, $instr:ident { $($field:ident),*$(,)* } )
+        =>
+        {
+            match $pc_offset {
+                PcOffset::Number(sw) => lc3_isa::Instruction::$new_i($($field,)* sw).into(),
                 PcOffset::Label(label) =>
                     match symbol_table.get(&label) {
                         Some(addr) => {
                             let offset = calculate_addr_offset(location_counter, addr)?;
-                            SingleObjectWord(Value(lc3_isa::Instruction::new_br(n, z, p, offset).into()))
+                            lc3_isa::Instruction::$new_i($($field,)* offset).into()
+                        }
+                        None => SingleObjectWord(UnlinkedInstruction(Instruction::$instr { $($field,)* $pc_offset: PcOffset::Label(label)})),
+                    }
+            }
+        }
+    }
+
+    let res = match instruction {
+        Instruction::Add { dr, sr1, sr2_or_imm5 } =>
+            match sr2_or_imm5 {
+                Sr2OrImm5::Sr2(sr2) => lc3_isa::Instruction::new_add_reg(dr, sr1, sr2),
+                Sr2OrImm5::Imm5(imm5) => lc3_isa::Instruction::new_add_imm(dr, sr1, imm5),
+            }.into(),
+        Instruction::And { dr, sr1, sr2_or_imm5 } =>
+            match sr2_or_imm5 {
+                Sr2OrImm5::Sr2(sr2) => lc3_isa::Instruction::new_and_reg(dr, sr1, sr2),
+                Sr2OrImm5::Imm5(imm5) => lc3_isa::Instruction::new_and_imm(dr, sr1, imm5),
+            }.into(),
+        Instruction::Br { cond_codes: ConditionCodes { n, z, p }, pc_offset9 } => {
+            match pc_offset9 {
+                PcOffset::Number(sw) => lc3_isa::Instruction::new_br(n, z, p, sw).into(),
+                PcOffset::Label(label) =>
+                    match symbol_table.get(&label) {
+                        Some(addr) => {
+                            let offset = calculate_addr_offset(location_counter, addr)?;
+                            lc3_isa::Instruction::new_br(n, z, p, offset).into()
                         }
                         None => SingleObjectWord(UnlinkedInstruction(Instruction::Br { cond_codes: ConditionCodes { n, z, p }, pc_offset9: PcOffset::Label(label) })),
                     }
             }
         }
-        Instruction::Jmp { base } => SingleObjectWord(Value(lc3_isa::Instruction::new_jmp(base).into())),
-        Instruction::Jsr { pc_offset11 } => {
-            match pc_offset11 {
-                PcOffset::Number(sw) => SingleObjectWord(Value(lc3_isa::Instruction::new_jsr(sw).into())),
-                PcOffset::Label(label) =>
-                    match symbol_table.get(&label) {
-                        Some(addr) => {
-                            let offset = calculate_addr_offset(location_counter, addr)?;
-                            SingleObjectWord(Value(lc3_isa::Instruction::new_jsr(offset).into()))
-                        }
-                        None => SingleObjectWord(UnlinkedInstruction(Instruction::Jsr { pc_offset11: PcOffset::Label(label) })),
-                    }
-            }
-        }
-        Instruction::Jsrr { base } => SingleObjectWord(Value(lc3_isa::Instruction::new_jsrr(base).into())),
-        Instruction::Ld { dr, pc_offset9 } => {
-            match pc_offset9 {
-                PcOffset::Number(sw) => SingleObjectWord(Value(lc3_isa::Instruction::new_ld(dr, sw).into())),
-                PcOffset::Label(label) =>
-                    match symbol_table.get(&label) {
-                        Some(addr) => {
-                            let offset = calculate_addr_offset(location_counter, addr)?;
-                            SingleObjectWord(Value(lc3_isa::Instruction::new_ld(dr, offset).into()))
-                        }
-                        None => SingleObjectWord(UnlinkedInstruction(Instruction::Ld { dr, pc_offset9: PcOffset::Label(label)})),
-                    }
-            }
-        }
-        Instruction::Ldi { dr, pc_offset9 } => {
-            match pc_offset9 {
-                PcOffset::Number(sw) => SingleObjectWord(Value(lc3_isa::Instruction::new_ldi(dr, sw).into())),
-                PcOffset::Label(label) =>
-                    match symbol_table.get(&label) {
-                        Some(addr) => {
-                            let offset = calculate_addr_offset(location_counter, addr)?;
-                            SingleObjectWord(Value(lc3_isa::Instruction::new_ldi(dr, offset).into()))
-                        }
-                        None => SingleObjectWord(UnlinkedInstruction(Instruction::Ldi { dr, pc_offset9: PcOffset::Label(label)})),
-                    }
-            }
-        }
-        Instruction::Ldr { dr, base, offset6 } => SingleObjectWord(Value(lc3_isa::Instruction::new_ldr(dr, base, offset6).into())),
-        Instruction::Lea { dr, pc_offset9 } => {
-            match pc_offset9 {
-                PcOffset::Number(sw) => SingleObjectWord(Value(lc3_isa::Instruction::new_lea(dr, sw).into())),
-                PcOffset::Label(label) =>
-                    match symbol_table.get(&label) {
-                        Some(addr) => {
-                            let offset = calculate_addr_offset(location_counter, addr)?;
-                            SingleObjectWord(Value(lc3_isa::Instruction::new_lea(dr, offset).into()))
-                        }
-                        None => SingleObjectWord(UnlinkedInstruction(Instruction::Lea { dr, pc_offset9: PcOffset::Label(label)})),
-                    }
-            }
-        }
-        Instruction::Not { dr, sr } => SingleObjectWord(Value(lc3_isa::Instruction::new_not(dr, sr).into())),
-        Instruction::Ret => SingleObjectWord(Value(lc3_isa::Instruction::new_ret().into())),
-        Instruction::Rti => SingleObjectWord(Value(lc3_isa::Instruction::new_rti().into())),
-        Instruction::St { sr, pc_offset9 } => {
-            match pc_offset9 {
-                PcOffset::Number(sw) => SingleObjectWord(Value(lc3_isa::Instruction::new_st(sr, sw).into())),
-                PcOffset::Label(label) =>
-                    match symbol_table.get(&label) {
-                        Some(addr) => {
-                            let offset = calculate_addr_offset(location_counter, addr)?;
-                            SingleObjectWord(Value(lc3_isa::Instruction::new_st(sr, offset).into()))
-                        }
-                        None => SingleObjectWord(UnlinkedInstruction(Instruction::St { sr, pc_offset9: PcOffset::Label(label)})),
-                    }
-            }
-        }
-        Instruction::Sti { sr, pc_offset9 } => {
-            match pc_offset9 {
-                PcOffset::Number(sw) => SingleObjectWord(Value(lc3_isa::Instruction::new_sti(sr, sw).into())),
-                PcOffset::Label(label) =>
-                    match symbol_table.get(&label) {
-                        Some(addr) => {
-                            let offset = calculate_addr_offset(location_counter, addr)?;
-                            SingleObjectWord(Value(lc3_isa::Instruction::new_sti(sr, offset).into()))
-                        }
-                        None => SingleObjectWord(UnlinkedInstruction(Instruction::Sti { sr, pc_offset9: PcOffset::Label(label)})),
-                    }
-            }
-        }
-        Instruction::Str { sr, base, offset6 } => SingleObjectWord(Value(lc3_isa::Instruction::new_str(sr, base, offset6).into())),
-        Instruction::Trap { trap_vec } => SingleObjectWord(Value(lc3_isa::Instruction::new_trap(trap_vec).into())),
+        Instruction::Jmp { base } => lc3_isa::Instruction::new_jmp(base).into(),
+        Instruction::Jsr { pc_offset11 } => assemble_pc_offset!(pc_offset11 => new_jsr, Jsr {}),
+        Instruction::Jsrr { base } => lc3_isa::Instruction::new_jsrr(base).into(),
+        Instruction::Ld { dr, pc_offset9 } => assemble_pc_offset!(pc_offset9 => new_ld, Ld { dr, }),
+        Instruction::Ldi { dr, pc_offset9 } => assemble_pc_offset!(pc_offset9 => new_ldi, Ldi { dr, }),
+        Instruction::Ldr { dr, base, offset6 } => lc3_isa::Instruction::new_ldr(dr, base, offset6).into(),
+        Instruction::Lea { dr, pc_offset9 } => assemble_pc_offset!(pc_offset9 => new_lea, Lea { dr, }),
+        Instruction::Not { dr, sr } => lc3_isa::Instruction::new_not(dr, sr).into(),
+        Instruction::Ret => lc3_isa::Instruction::new_ret().into(),
+        Instruction::Rti => lc3_isa::Instruction::new_rti().into(),
+        Instruction::St { sr, pc_offset9 } => assemble_pc_offset!(pc_offset9 => new_st, St { sr, }),
+        Instruction::Sti { sr, pc_offset9 } => assemble_pc_offset!(pc_offset9 => new_sti, Sti { sr, }),
+        Instruction::Str { sr, base, offset6 } => lc3_isa::Instruction::new_str(sr, base, offset6).into(),
+        Instruction::Trap { trap_vec } => lc3_isa::Instruction::new_trap(trap_vec).into(),
 
         Instruction::Fill { value } => {
             match value {
