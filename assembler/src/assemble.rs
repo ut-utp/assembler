@@ -136,17 +136,17 @@ impl Instruction {
     }
 }
 
-struct FirstPassRegion {
+struct FirstPassBlock {
     origin: Addr,
     instructions: Vec<Instruction>,
 }
 
 pub struct Object {
     pub(crate) symbol_table: SymbolTable,
-    pub(crate) regions: Vec<Region>,
+    pub(crate) blocks: Vec<ObjectBlock>,
 }
 
-pub struct Region {
+pub struct ObjectBlock {
     pub(crate) origin: Addr,
     pub(crate) words: Vec<ObjectWord>,
 }
@@ -345,11 +345,11 @@ pub(crate) fn assemble_instruction(symbol_table: &SymbolTable, location_counter:
 
 type ParserInstructions = Vec<WithErrData<parse::Instruction>>;
 
-fn first_pass(region_data: impl IntoIterator<Item=(Addr, ParserInstructions)>) -> Result<(Vec<FirstPassRegion>, SymbolTable), ()> {
-    let mut fp_regions = Vec::new();
+fn first_pass(program_block_data: impl IntoIterator<Item=(Addr, ParserInstructions)>) -> Result<(Vec<FirstPassBlock>, SymbolTable), ()> {
+    let mut fp_blocks = Vec::new();
     let mut symbol_table = HashMap::new();
 
-    for (origin, parser_instructions) in region_data {
+    for (origin, parser_instructions) in program_block_data {
         let mut instructions = Vec::new();
         let mut location_counter = origin;
 
@@ -366,14 +366,14 @@ fn first_pass(region_data: impl IntoIterator<Item=(Addr, ParserInstructions)>) -
             location_counter += addresses_used;
         }
 
-        fp_regions.push(FirstPassRegion { origin, instructions });
+        fp_blocks.push(FirstPassBlock { origin, instructions });
     }
 
-    Ok((fp_regions, symbol_table))
+    Ok((fp_blocks, symbol_table))
 }
 
-fn second_pass_one_region(symbol_table: &SymbolTable, fp_region: FirstPassRegion) -> Result<Region, TryFromIntError> {
-    let FirstPassRegion { origin, instructions } = fp_region;
+fn second_pass_one_block(symbol_table: &SymbolTable, fp_block: FirstPassBlock) -> Result<ObjectBlock, TryFromIntError> {
+    let FirstPassBlock { origin, instructions } = fp_block;
 
     let mut words = Vec::new();
     let mut location_counter = origin;
@@ -387,16 +387,16 @@ fn second_pass_one_region(symbol_table: &SymbolTable, fp_region: FirstPassRegion
         location_counter += addresses_used;
     }
 
-    Ok(Region { origin, words })
+    Ok(ObjectBlock { origin, words })
 }
 
-fn second_pass(symbol_table: SymbolTable, fp_regions: Vec<FirstPassRegion>) -> Result<Object, TryFromIntError> {
-    let regions =
-        fp_regions.into_iter()
-            .map(|fp_region| second_pass_one_region(&symbol_table, fp_region))
-            .collect::<Result<Vec<Region>, TryFromIntError>>()?;
+fn second_pass(symbol_table: SymbolTable, fp_blocks: Vec<FirstPassBlock>) -> Result<Object, TryFromIntError> {
+    let blocks =
+        fp_blocks.into_iter()
+            .map(|fp_block| second_pass_one_block(&symbol_table, fp_block))
+            .collect::<Result<Vec<ObjectBlock>, TryFromIntError>>()?;
 
-    Ok(Object { symbol_table, regions })
+    Ok(Object { symbol_table, blocks })
 }
 
 pub(crate) fn get_orig(orig_operands: WithErrData<Vec<WithErrData<Operand>>>) -> Result<Addr, ()> {
@@ -405,16 +405,16 @@ pub(crate) fn get_orig(orig_operands: WithErrData<Vec<WithErrData<Operand>>>) ->
 }
 
 pub fn assemble(file: parse::File) -> Result<Object, ()> {
-    let region_data =
-        file.regions.into_iter()
+    let block_data =
+        file.blocks.into_iter()
             .map(|p| {
-                let parse::Region { orig, instructions } = result(p)?;
+                let parse::ProgramBlock { orig, instructions } = result(p)?;
                 let origin = get_orig(orig)?;
                 Ok((origin, instructions))
             })
             .collect::<Result<Vec<(Addr, ParserInstructions)>, ()>>()?;
 
-    let (fp_regions, symbol_table) = first_pass(region_data)?;
+    let (fp_blocks, symbol_table) = first_pass(block_data)?;
 
-    second_pass(symbol_table, fp_regions).map_err(|_| ())
+    second_pass(symbol_table, fp_blocks).map_err(|_| ())
 }

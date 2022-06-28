@@ -5,10 +5,10 @@ use std::string::String;
 use itertools::{concat, Itertools, zip};
 use lc3_isa::{Addr, Word};
 use crate::lex::{LexData, Opcode};
-use crate::parse::{File, Instruction, Operand, Region};
+use crate::parse::{File, Instruction, Operand, ProgramBlock};
 use crate::{get, get_result, SourceId, Spanned, SpanWithSource, util, WithErrData};
 use crate::assemble::calculate_offset;
-use crate::error::{Error, InvalidReferenceReason, OperandType, RegionPlacement, RoughAddr, SingleError};
+use crate::error::{Error, InvalidReferenceReason, OperandType, ProgramBlockPlacement, RoughAddr, SingleError};
 use crate::error::OperandType::*;
 use crate::error::Error::*;
 use crate::error::SingleError::*;
@@ -29,8 +29,8 @@ impl ParseErrorsAnalysis {
 }
 
 impl MutVisitor for ParseErrorsAnalysis {
-    fn enter_region_error(&mut self, span: &SpanWithSource) {
-        self.push_error(BadRegion, span);
+    fn enter_program_block_error(&mut self, span: &SpanWithSource) {
+        self.push_error(BadProgramBlock, span);
     }
     fn enter_orig_error(&mut self, span: &SpanWithSource) {
         self.push_error(BadOperands, span);
@@ -365,7 +365,7 @@ struct ObjectPlacementAnalysis {
     errors: Vec<Error>,
     last_start: RoughAddr,
     object_index: usize,
-    object_spans: Vec<RegionPlacement>,
+    object_spans: Vec<ProgramBlockPlacement>,
 }
 
 impl ObjectPlacementAnalysis {
@@ -384,14 +384,14 @@ impl MutVisitor for ObjectPlacementAnalysis {
         self.object_spans.sort_unstable_by_key(|span| span.span_in_memory.start);
         for (op1, op2) in self.object_spans.iter().tuple_windows() {
             if op2.span_in_memory.start < op1.span_in_memory.end {
-                self.errors.push(Single(span.id.clone(), SingleError::regions_overlap(op1.clone(), op2.clone())));
+                self.errors.push(Single(span.id.clone(), SingleError::program_blocks_overlap(op1.clone(), op2.clone())));
             }
         }
     }
 
-    fn exit_region(&mut self, _region: &Region, span: &SpanWithSource, location: &LocationCounter) {
+    fn exit_program_block(&mut self, _program_block: &ProgramBlock, span: &SpanWithSource, location: &LocationCounter) {
         self.object_spans.push(
-            RegionPlacement {
+            ProgramBlockPlacement {
                 position_in_file: self.object_index,
                 span_in_file: span.clone(),
                 span_in_memory: self.last_start..location.value
@@ -443,29 +443,29 @@ impl LocationCounterState {
 
 fn visit(v: &mut impl MutVisitor, file: &File, span: &SpanWithSource) {
     v.enter_file(file, span);
-    for region in file.regions.iter() {
-        visit_region(v, file.id.clone(), region);
+    for block in file.blocks.iter() {
+        visit_program_block(v, file.id.clone(), block);
     }
     v.exit_file(file, span);
 }
 
-fn visit_region(v: &mut impl MutVisitor, id: SourceId, region: &WithErrData<Region>) {
-    let (region_res, span) = region;
+fn visit_program_block(v: &mut impl MutVisitor, id: SourceId, program_block: &WithErrData<ProgramBlock>) {
+    let (pb_res, span) = program_block;
     let span = (id.clone(), span.clone()).into();
-    match region_res {
-        Err(_) => { v.enter_region_error(&span); }
-        Ok(r) => {
-            v.enter_region(r, &span);
+    match pb_res {
+        Err(_) => { v.enter_program_block_error(&span); }
+        Ok(pb) => {
+            v.enter_program_block(pb, &span);
 
             let mut location_counter = LocationCounter::new();
 
-            let Region { orig, instructions } = r;
+            let ProgramBlock { orig, instructions } = pb;
             visit_orig(v, id.clone(), orig, &mut location_counter);
             for instruction in instructions {
                 visit_instruction(v, id.clone(), instruction, &mut location_counter);
             }
 
-            v.exit_region(r, &span, &mut location_counter);
+            v.exit_program_block(pb, &span, &mut location_counter);
         }
     }
 }
@@ -572,9 +572,9 @@ trait MutVisitor {
     fn enter_file(&mut self, _file: &File, _span: &SpanWithSource) {}
     fn exit_file(&mut self, _file: &File, _span: &SpanWithSource) {}
 
-    fn enter_region_error(&mut self, _span: &SpanWithSource) {}
-    fn enter_region(&mut self, _region: &Region, _span: &SpanWithSource) {}
-    fn exit_region(&mut self, _region: &Region, _span: &SpanWithSource, _location: &LocationCounter) {}
+    fn enter_program_block_error(&mut self, _span: &SpanWithSource) {}
+    fn enter_program_block(&mut self, _program_block: &ProgramBlock, _span: &SpanWithSource) {}
+    fn exit_program_block(&mut self, _program_block: &ProgramBlock, _span: &SpanWithSource, _location: &LocationCounter) {}
 
     fn enter_orig_error(&mut self, _span: &SpanWithSource) {}
     fn enter_orig(&mut self, _orig: &Vec<WithErrData<Operand>>, _span: &SpanWithSource, _location: &LocationCounter) {}

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use lc3_isa::{Addr, Word};
-use crate::assemble::{assemble_instruction, AssemblyResult, Object, ObjectWord, Region, SymbolTable};
+use crate::assemble::{assemble_instruction, AssemblyResult, Object, ObjectWord, ObjectBlock, SymbolTable};
 use crate::error::SingleError;
 
 pub struct Block {
@@ -8,12 +8,12 @@ pub struct Block {
     pub(crate) words: Vec<Word>,
 }
 
-fn link_region(symbol_table: &SymbolTable, region: Region) -> Result<Block, SingleError> {
+fn link_object_block(symbol_table: &SymbolTable, block: ObjectBlock) -> Result<Block, SingleError> {
     let mut words = Vec::new();
-    let Region { origin, words: region_words, .. } = region;
+    let ObjectBlock { origin, words: object_words, .. } = block;
     let mut location_counter = origin;
-    for region_word in region_words {
-        match region_word {
+    for object_word in object_words {
+        match object_word {
             ObjectWord::Value(word) => {
                 words.push(word);
                 location_counter += 1;
@@ -43,9 +43,9 @@ fn link_region(symbol_table: &SymbolTable, region: Region) -> Result<Block, Sing
     Ok(Block { origin, words })
 }
 
-pub(crate) fn link_regions(symbol_table: &SymbolTable, regions: Vec<Region>) -> Result<Vec<Block>, SingleError> {
-    regions.into_iter()
-        .map(|region| link_region(symbol_table, region))
+pub(crate) fn link_object_blocks(symbol_table: &SymbolTable, blocks: Vec<ObjectBlock>) -> Result<Vec<Block>, SingleError> {
+    blocks.into_iter()
+        .map(|block| link_object_block(symbol_table, block))
         .collect()
 }
 
@@ -61,7 +61,7 @@ pub fn link(objects: impl IntoIterator<Item=Object>) -> Result<Vec<Block>, Singl
 
     let blocks =
         objects.into_iter()
-            .map(|object| link_regions(&mut global_symbol_table, object.regions))
+            .map(|object| link_object_blocks(&mut global_symbol_table, object.blocks))
             .collect::<Result<Vec<Vec<Block>>, SingleError>>()?
             .into_iter()
             .flatten()

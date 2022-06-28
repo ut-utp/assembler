@@ -424,7 +424,7 @@ mod error {
              BR SOMEWHERE\n\
              .END"
             => SingleError::InvalidLabelReference { reason: InvalidReferenceReason::Undefined, .. },
-        regions_overlap:
+        program_blocks_overlap:
             ".ORIG x3000\n\
              ADD R0, R0, R0\n\
              ADD R0, R0, R0\n\
@@ -434,7 +434,7 @@ mod error {
              ADD R0, R0, R0\n\
              ADD R0, R0, R0\n\
              .END"
-            => SingleError::RegionsOverlap { .. },
+            => SingleError::ProgramBlocksOverlap { .. },
         label_too_distant:
             ".ORIG x3000\n\
              LEA R0, LABEL\n\
@@ -520,7 +520,7 @@ mod error {
              ADD R0, R0, R0"
             =>
             {
-                SingleError::BadRegion,
+                SingleError::BadProgramBlock,
                 SingleError::NoEnd
             },
         two_operand_type_mismatches:
@@ -548,10 +548,10 @@ mod error {
             {
                 SingleError::BadOperand,
                 SingleError::BadInstruction,
-                SingleError::BadRegion,
+                SingleError::BadProgramBlock,
                 SingleError::DuplicateLabel { .. },
                 SingleError::WrongNumberOfOperands { expected: 3, actual: 1 },
-                SingleError::RegionsOverlap { .. },
+                SingleError::ProgramBlocksOverlap { .. },
                 SingleError::OperandTypeMismatch { .. },
                 SingleError::InvalidLabelReference { .. },
                 SingleError::LabelTooDistant { .. },

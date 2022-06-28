@@ -116,7 +116,7 @@ pub enum SingleError {
 
     TooManyInputs,
 
-    BadRegion,
+    BadProgramBlock,
     BadInstruction,
     BadLabel,
     BadOpcode,
@@ -127,7 +127,7 @@ pub enum SingleError {
     DuplicateLabel { label: String, occurrences: Vec<SpanWithSource>, },
     InvalidLabelReference { label: String, reason: InvalidReferenceReason },
     LabelTooDistant { label: String, width: u8, est_ref_pos: RoughAddr, est_label_pos: RoughAddr, offset: SignedWord },
-    RegionsOverlap { placement1: RegionPlacement, placement2: RegionPlacement },
+    ProgramBlocksOverlap { placement1: ProgramBlockPlacement, placement2: ProgramBlockPlacement },
     NoTokens,
     NoOrig,
     NoEnd,
@@ -141,19 +141,19 @@ pub enum InvalidReferenceReason {
 }
 
 impl SingleError {
-    pub(crate) fn regions_overlap(p1: RegionPlacement, p2: RegionPlacement) -> Self {
+    pub(crate) fn program_blocks_overlap(p1: ProgramBlockPlacement, p2: ProgramBlockPlacement) -> Self {
         let (placement1, placement2) =
             if p1.span_in_memory.start <= p2.span_in_memory.start {
                 (p1, p2)
             } else {
                 (p2, p1)
             };
-        RegionsOverlap { placement1, placement2 }
+        ProgramBlocksOverlap { placement1, placement2 }
     }
 
     fn message(&self) -> String {
         match self {
-            BadRegion => String::from("invalid region"),
+            BadProgramBlock => String::from("invalid program block"),
             BadInstruction => String::from("invalid instruction"),
             BadLabel => String::from("invalid label"),
             BadOpcode => String::from("invalid opcode"),
@@ -180,8 +180,8 @@ impl SingleError {
                         label_pos_width = max(4, min_signed_hex_digits_required(*est_ref_pos) as usize),
                         ref_pos_width = max(4, min_signed_hex_digits_required(*est_label_pos) as usize),)
             }
-            RegionsOverlap { placement1, placement2 } => {
-                format!("region {} in file occupying [{:#0o1s_width$X}, {:#0o1e_width$X}) overlaps region {} occupying [{:#0o2s_width$X}, {:#0o2e_width$X})",
+            ProgramBlocksOverlap { placement1, placement2 } => {
+                format!("program block {} in file occupying [{:#0o1s_width$X}, {:#0o1e_width$X}) overlaps program block {} occupying [{:#0o2s_width$X}, {:#0o2e_width$X})",
                     placement1.position_in_file,
                     placement1.span_in_memory.start,
                     placement1.span_in_memory.end,
@@ -232,7 +232,7 @@ fn report_single(id: SourceId, span: Option<Span>, error: SingleError) -> Report
                 r = r.with_label(Label::new(occurrence).with_message(label_message))
             }
         }
-        RegionsOverlap { placement1, placement2 } => {
+        ProgramBlocksOverlap { placement1, placement2 } => {
             let (first, first_pos_text, second, second_pos_text) =
                 if placement1.position_in_file < placement2.position_in_file {
                     (placement1, "end", placement2, "start")
@@ -399,7 +399,7 @@ impl OperandType {
 }
 
 #[derive(Clone, Debug)]
-pub struct RegionPlacement {
+pub struct ProgramBlockPlacement {
     pub(crate) position_in_file: usize,
     pub(crate) span_in_file: SpanWithSource,
     pub(crate) span_in_memory: Range<RoughAddr>,

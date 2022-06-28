@@ -10,7 +10,7 @@ use crate::LeniencyLevel;
 use crate::lex::{LiteralValue, Opcode, Token};
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Region {
+pub struct ProgramBlock {
     pub(crate) orig: WithErrData<Vec<WithErrData<Operand>>>,
     pub(crate) instructions: Vec<WithErrData<Instruction>>,
 }
@@ -163,7 +163,7 @@ fn everything_until_orig() -> Repeated<NoneOf<Token, Token, Simple<Token>>> {
     none_of(Token::Opcode(Opcode::Orig)).repeated()
 }
 
-fn region(leniency: LeniencyLevel) -> impl Parser<Token, WithErrData<Region>, Error = Simple<Token>> {
+fn program_block(leniency: LeniencyLevel) -> impl Parser<Token, WithErrData<ProgramBlock>, Error = Simple<Token>> {
     let orig =
         just(Token::Opcode(Opcode::Orig))
             .ignore_then(operands(leniency));
@@ -177,7 +177,7 @@ fn region(leniency: LeniencyLevel) -> impl Parser<Token, WithErrData<Region>, Er
         )
         .then_ignore(just::<_, Token, _>(Token::End))
         .map_with_span(|(orig, instructions), span| {
-            (Ok(Region { orig, instructions }), span)
+            (Ok(ProgramBlock { orig, instructions }), span)
         })
         // Pseudo-recovery strategy -- take everything until next .ORIG
         .or(any().then(everything_until_orig())
@@ -189,20 +189,20 @@ pub struct File {
     pub(crate) id: SourceId,
     #[allow(dead_code)]
     pub(crate) before_first_orig: Spanned<Vec<Token>>, // TODO: check that this only contains newlines and comments (at least if strict)
-    pub regions: Vec<WithErrData<Region>>
+    pub blocks: Vec<WithErrData<ProgramBlock>>
 }
 
 fn file(id: SourceId, leniency: LeniencyLevel) -> impl Parser<Token, Spanned<File>, Error = Simple<Token>> {
     everything_until_orig()
         .map_with_span(|toks, span| (toks, span))
         .then(
-            region(leniency)
+            program_block(leniency)
                 .separated_by(everything_until_orig())
                 .allow_trailing()
         )
         .then_ignore(end())
-        .map_with_span(move |(before_first_orig, regions), span|
-            (File { id: id.clone(), before_first_orig, regions }, span))
+        .map_with_span(move |(before_first_orig, blocks), span|
+            (File { id: id.clone(), before_first_orig, blocks }, span))
 }
 
 pub fn parse(id: SourceId, src: &str, tokens: Vec<Spanned<Token>>, leniency: LeniencyLevel) -> Result<Spanned<File>, Vec<Simple<Token>>> {
@@ -241,13 +241,13 @@ mod tests {
 
         let f = file.0;
         assert_eq!((vec![], 0..5), f.before_first_orig); // TODO: probably doesn't need fixing, but span should probably be 0..0; find source of bug
-        assert_eq!(vec![(Ok(Region {
+        assert_eq!(vec![(Ok(ProgramBlock {
                 orig: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11),
                 instructions: vec![
                     (Ok(Instruction { label: None, opcode: (Ok(Add), 12..15), operands: (Ok(vec![(Ok(Register(R0)), 16..18), (Ok(Register(R0)), 20..22), (Ok(Register(R0)), 24..26)]), 16..26) }), 12..26)
                 ],
             }), 0..31)],
-           f.regions);
+           f.blocks);
     }
 
     #[test]
@@ -256,13 +256,13 @@ mod tests {
         let (tokens, _) = lex(source, LeniencyLevel::Lenient).unwrap();
         let file = parse("<test>".to_string(), source, tokens, LeniencyLevel::Lenient).unwrap();
 
-        assert_eq!(vec![(Ok(Region {
+        assert_eq!(vec![(Ok(ProgramBlock {
                 orig: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11),
                 instructions: vec![
                     (Ok(Instruction { label: None, opcode: (Ok(Add), 12..15), operands: (Ok(vec![(Ok(Register(R0)), 16..18), (Ok(Register(R0)), 20..22), (Err(()), 24..29)]), 16..29) }), 12..29)
                 ],
             }), 0..44)],
-            file.0.regions);
+            file.0.blocks);
     }
 
     #[test]
@@ -271,13 +271,13 @@ mod tests {
         let (tokens, _) = lex(source, LeniencyLevel::Lenient).unwrap();
         let file = parse("<test>".to_string(), source, tokens, LeniencyLevel::Lenient).unwrap();
 
-        assert_eq!(vec![(Ok(Region {
+        assert_eq!(vec![(Ok(ProgramBlock {
                 orig: (Ok(vec![(Ok(NumberLiteral(LiteralValue::Word(12288))), 6..11)]), 6..11),
                 instructions: vec![
                    (Ok(Instruction { label: Some((Err(()), 12..18)), opcode: (Ok(Add), 19..22), operands: (Ok(vec![(Ok(Register(R0)), 23..25), (Ok(Register(R0)), 27..29), (Ok(NumberLiteral(LiteralValue::Word(1))), 31..33)]), 23..33) }), 12..33)
                 ],
             }), 0..48)],
-            file.0.regions);
+            file.0.blocks);
     }
 
     macro_rules! parse {
