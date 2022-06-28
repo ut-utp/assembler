@@ -273,7 +273,7 @@ pub fn assemble_file(input: &PathBuf, leniency: LeniencyLevel, no_os: bool) -> R
 pub fn assemble(id: &SourceId, src: &String, leniency: LeniencyLevel, no_os: bool) -> Result<lc3_isa::util::MemoryDump, error::Error> {
     let file = parse_and_analyze(id, src, leniency)?;
     let assemble::Object { symbol_table, regions } = assemble::assemble(file).map_err(|_| (id.clone(), error::SingleError::Assemble))?;
-    let linked_regions = link::link_regions(&symbol_table, regions).map_err(|e| (id.clone(), e))?;
-    let mem = layer::layer(linked_regions, !no_os).map_err(|e| (id.clone(), e))?;
+    let blocks = link::link_regions(&symbol_table, regions).map_err(|e| (id.clone(), e))?;
+    let mem = layer::layer(blocks, !no_os).map_err(|e| (id.clone(), e))?;
     Ok(mem)
 }

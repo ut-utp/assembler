@@ -3,12 +3,12 @@ use lc3_isa::{Addr, Word};
 use crate::assemble::{assemble_instruction, AssemblyResult, Object, ObjectWord, Region, SymbolTable};
 use crate::error::SingleError;
 
-pub struct LinkedRegion {
+pub struct Block {
     pub(crate) origin: Addr,
     pub(crate) words: Vec<Word>,
 }
 
-fn link_region(symbol_table: &SymbolTable, region: Region) -> Result<LinkedRegion, SingleError> {
+fn link_region(symbol_table: &SymbolTable, region: Region) -> Result<Block, SingleError> {
     let mut words = Vec::new();
     let Region { origin, words: region_words, .. } = region;
     let mut location_counter = origin;
@@ -40,16 +40,16 @@ fn link_region(symbol_table: &SymbolTable, region: Region) -> Result<LinkedRegio
                 }
         }
     }
-    Ok(LinkedRegion { origin, words })
+    Ok(Block { origin, words })
 }
 
-pub(crate) fn link_regions(symbol_table: &SymbolTable, regions: Vec<Region>) -> Result<Vec<LinkedRegion>, SingleError> {
+pub(crate) fn link_regions(symbol_table: &SymbolTable, regions: Vec<Region>) -> Result<Vec<Block>, SingleError> {
     regions.into_iter()
         .map(|region| link_region(symbol_table, region))
         .collect()
 }
 
-pub fn link(objects: impl IntoIterator<Item=Object>) -> Result<Vec<LinkedRegion>, SingleError> {
+pub fn link(objects: impl IntoIterator<Item=Object>) -> Result<Vec<Block>, SingleError> {
     let objects = objects.into_iter().collect::<Vec<_>>();
 
     let mut global_symbol_table = HashMap::new();
@@ -59,13 +59,13 @@ pub fn link(objects: impl IntoIterator<Item=Object>) -> Result<Vec<LinkedRegion>
         }
     }
 
-    let linked_regions =
+    let blocks =
         objects.into_iter()
             .map(|object| link_regions(&mut global_symbol_table, object.regions))
-            .collect::<Result<Vec<Vec<LinkedRegion>>, SingleError>>()?
+            .collect::<Result<Vec<Vec<Block>>, SingleError>>()?
             .into_iter()
             .flatten()
             .collect();
 
-    Ok(linked_regions)
+    Ok(blocks)
 }
