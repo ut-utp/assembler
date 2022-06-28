@@ -86,6 +86,19 @@ impl Error {
         }
         Ok(String::from_utf8_lossy(&s).to_string())
     }
+
+    pub fn get_first_single_error(&self) -> Option<&SingleError> {
+        use Error::*;
+        match self {
+            Single(_, error) => Some(error),
+            Spanned(_, error) => Some(error),
+            Multiple(errors) =>
+                match errors.get(0) {
+                    Some(e) => e.get_first_single_error(),
+                    None => None,
+                },
+        }
+    }
 }
 
 pub(crate) type RoughAddr = i32;

@@ -1,0 +1,15 @@
+Error: invalid operand
+   ╭─[.\example\example.asm:4:25]
+   │
+ 4 │         ADD     R2, R0, #R1
+   ·                         ─┬─
+   ·                          ╰─── here
+───╯
+Error: reference to label RESULTS invalid: not previously defined
+   ╭─[.\example\example.asm:5:21]
+   │
+ 5 │         ST      R2, RESULTS
+   ·                     ───┬───
+   ·                        ╰───── here
+───╯
+Error: assembly failed
