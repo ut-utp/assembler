@@ -13,7 +13,6 @@ use std::path::PathBuf;
 mod util;
 
 pub mod error;
-
 pub mod lex;
 pub mod parse;
 pub mod analyze;
@@ -23,7 +22,10 @@ pub mod layer;
 
 type Span = std::ops::Range<usize>;
 type Spanned<T> = (T, Span);
-type WithErrData<T> = Spanned<Result<T, ()>>;
+
+/// A parsed syntax element, or an error if it was skipped,
+/// along with any other data necessary to produce an error indicating this syntax element.
+pub type WithErrData<T> = Spanned<Result<T, ()>>;
 
 fn get<T>(v: &Vec<WithErrData<T>>, i: usize) -> Option<&T> {
     v.get(i)

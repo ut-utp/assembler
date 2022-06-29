@@ -1,3 +1,64 @@
+//! Functions and data structures for lexing LC-3 assembly.
+//!
+//! Lexical analysis, or lexing, is the process of splitting a source string into a sequence of meaningful "tokens."
+//! Each token is a small data structure which typically represents one "word" or punctuation mark
+//! in the source code. Here's an example:
+//!
+//! ```
+//! # use lc3_assembler::LeniencyLevel;
+//! # use lc3_assembler::lex::*;
+//! # use lc3_assembler::lex::Token::*;
+//! # use lc3_assembler::lex::Opcode::*;
+//! # use lc3_isa::Reg::*;
+//! # use lc3_assembler::lex::LiteralValue::*;
+//! let source = "ADD R0, R0, #1; increment counter";
+//! let (tokens, _) = lex(source, LeniencyLevel::Lenient).unwrap();
+//! assert_eq!(tokens,
+//!     vec![
+//!         (Opcode(Add),             0.. 3),
+//!         (Register(R0),            4.. 6),
+//!         (Comma,                   6.. 7),
+//!         (Register(R0),            8..10),
+//!         (Comma,                  10..11),
+//!         (NumberLiteral(Word(1)), 12..14),
+//!         (Comment,                14..33),
+//!     ]);
+//! ```
+//!
+//! The string is split into seven [`Token`]s. For most of them,
+//! each part separated by spaces or punctuation becomes its own token.
+//! But really, tokens are based on what parts are significant; notice that the
+//! entire comment is represented by one token, and there is no information
+//! stored about what the comment said. This is because the content of comments
+//! doesn't change the code that needs to be assembled. Maybe more obviously,
+//! all of the spaces between the opcode and operands aren't represented in
+//! the output tokens at all. They were only important for distinguishing separate tokens.
+//!
+//! Lexing only splits the string. It doesn't check whether the order of tokens makes sense.
+//! For example, the following string is not valid LC-3, but it can be lexed successfully:
+//!
+//! ```
+//! # use lc3_assembler::LeniencyLevel;
+//! # use lc3_assembler::lex::*;
+//! # use lc3_assembler::lex::Token::*;
+//! # use lc3_assembler::lex::Opcode::*;
+//! # use lc3_isa::Reg::*;
+//! # use lc3_assembler::lex::LiteralValue::*;
+//! let source = "hello, world\n";
+//! let (tokens, _) = lex(source, LeniencyLevel::Lenient).unwrap();
+//! assert_eq!(tokens,
+//!     vec![
+//!         (Label("HELLO".to_string()),  0.. 5),
+//!         (Comma,                       5.. 6),
+//!         (Label("WORLD".to_string()),  7..12),
+//!         (Newline,                    12..13),
+//!     ]);
+//! ```
+//!
+//! [`lex`] also outputs the locations of the tokens in the source string as index ranges.
+//! These are to help construct error messages which refer to specific locations in the source.
+//!
+//!
 use chumsky::prelude::*;
 use lc3_isa::{Addr, Reg, SignedWord, Word};
 use std::convert::{TryFrom, TryInto};
@@ -8,21 +69,58 @@ use chumsky::Stream;
 use crate::Spanned;
 use crate::LeniencyLevel;
 
+/// A unit representing a string of meaningful text in LC-3 assembly code.
+///
+/// Produced by [`lex`]ing. See the [module-level documentation](crate::lex) for examples.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Token {
+    /// An opcode, pseudo-op (**except `.END`**), or named TRAP routine.
     Opcode(Opcode),
+    /// A register reference (e.g., `R0`).
     Register(Reg),
+    /// An unqualified positive decimal number. Used as an officially required operand of `.BLKW`.
+    ///
+    /// # Examples
+    /// - `0`
+    /// - `10`
     UnqualifiedNumberLiteral(Word),
+    /// A number literal, qualified with a base prefix (`#`, `b`, or `x`) and optional negative sign `-`.
+    ///
+    /// The qualifiers are used to calculate the numeric value during lexing and are not stored.
+    ///
+    /// # Examples
+    /// - `#-1`
+    /// - `x3000`
+    /// - `b0101`
     NumberLiteral(LiteralValue),
+    /// A string literal (e.g., `"Hello, world!"`).
     StringLiteral(String),
+    /// A label or label reference.
+    ///
+    /// Most alphanumeric strings which aren't reserved for other valid tokens
+    /// are valid labels, depending on the [`LeniencyLevel`](crate::LeniencyLevel)
+    /// used when [`lex`]ing.
     Label(String),
+
+    /// The `.END` pseudo-op.
+    ///
+    /// Not included as an [`Opcode`] because it denotes
+    /// the end of a program block. This makes it
+    /// useful for parsing to distinguish between `.END`
+    /// and instructions that can occur within a program block.
     End,
 
+    /// A newline.
+    ///
+    /// Matches line feeds, carriage returns,
+    /// and other types of vertical whitespace.
     Newline,
+    /// A comma (`,`).
     Comma,
-
+    /// A comment, including the leading semicolon.
     Comment,
 
+    /// Any string of characters which doesn't represent any other type of token.
     Invalid,
 }
 
@@ -32,6 +130,9 @@ impl Display for Token {
     }
 }
 
+/// The numeric value represented by a number literal.
+///
+/// Can be any unsigned or 2's-complement signed number with a width up to 16 bits.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum LiteralValue {
     Word(Word),
@@ -71,6 +172,7 @@ impl TryFrom<LiteralValue> for u8 {
     }
 }
 
+/// The set of condition codes (`n`, `z`, and/or `p`) on which a `BR` opcode is conditioned.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ConditionCodes {
     pub(crate) n: bool,
@@ -78,38 +180,78 @@ pub struct ConditionCodes {
     pub(crate) p: bool,
 }
 
+/// A specific LC-3 opcode, pseudo-op, or named TRAP routine.
+///
+/// Does not include [`.END`](Token::End).
+///
+/// Represents a *case-insensitive* string in the source code.
+/// That is, [`Opcode::Add`] can represent `ADD`, `add`, or `Add`, etc.
+/// All are treated as the same `Opcode`. Below, only the all-uppercase
+/// option is listed for each `Opcode` variant.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Opcode {
+    /// The opcode `ADD`.
     Add,
+    /// The opcode `AND`.
     And,
+    /// The opcode `BR`, conditioned on any combination of condition codes.
+    ///
+    /// # Examples
+    /// - `BR`
+    /// - `BRn`
+    /// - `BRzp`
     Br(ConditionCodes),
+    /// The opcode `JMP`.
     Jmp,
+    /// The opcode `JSR`.
     Jsr,
+    /// The opcode `JSRR`.
     Jsrr,
+    /// The opcode `LD`.
     Ld,
+    /// The opcode `LDI`.
     Ldi,
+    /// The opcode `LDR`.
     Ldr,
+    /// The opcode `LEA`.
     Lea,
+    /// The opcode `NOT`.
     Not,
+    /// The opcode `RET`.
     Ret,
+    /// The opcode `RTI`.
     Rti,
+    /// The opcode `ST`.
     St,
+    /// The opcode `STI`.
     Sti,
+    /// The opcode `STR`.
     Str,
+    /// The opcode `TRAP`.
     Trap,
 
     // Pseudo-ops
+    /// The pseudo-op `.ORIG`.
     Orig,
+    /// The pseudo-op `.FILL`.
     Fill,
+    /// The pseudo-op `.BLKW`.
     Blkw,
+    /// The pseudo-op `.STRINGZ`.
     Stringz,
 
     // Named TRAP routines
+    /// The named TRAP routine `GETC`.
     Getc,
+    /// The named TRAP routine `OUT`.
     Out,
+    /// The named TRAP routine `PUTS`.
     Puts,
+    /// The named TRAP routine `IN`.
     In,
+    /// The named TRAP routine `PUTSP`.
     Putsp,
+    /// The named TRAP routine `HALT`.
     Halt,
 }
 
@@ -380,6 +522,12 @@ fn case_insensitive_pass(case_sensitive_pass_results: Vec<Spanned<CaseSensitiveP
     (toks, errors)
 }
 
+/// Analysis data about the [`Token`]s output during [`lex`]ing.
+///
+/// The result of performing some analysis on the tokens
+/// after "lexing proper" is complete. Used to produce some error messages
+/// during [semantic analysis](crate::analyze), after the tokens
+/// have been consumed during the [`parse`](crate::parse) step.
 pub struct LexData {
     pub(crate) no_tokens: bool,
     pub(crate) orig_present: bool,
@@ -390,6 +538,15 @@ fn contains_token(tokens: &Vec<Spanned<Token>>, token: Token) -> bool {
     tokens.iter().any(|t| t.0 == token)
 }
 
+/// Produce a sequence of [`Token`]s representative of the given source string.
+///
+/// See the [module-level documentation](crate::lex) for general information and examples.
+///
+/// This function also produces index ranges corresponding to each token's location
+/// in the source string. It also analyzes the tokens and produces [`LexData`].
+/// Because the tokens are consumed by the [`parse`](crate::parse) step, this data saves the
+/// information about the tokens which the [semantic analysis step](crate::analyze)
+/// needs to produce some types of error messages.
 pub fn lex(source: &str, leniency: LeniencyLevel) -> Result<(Vec<Spanned<Token>>, LexData), Vec<Simple<char>>> {
     let (maybe_csprs, mut errors) = case_sensitive_pass(source);
     let tokens =
