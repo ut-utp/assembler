@@ -126,6 +126,10 @@ pub fn read(input: &PathBuf) -> Result<String, std::io::Error> {
 
 
 /// Get a [`SourceId`] for the given source file.
+///
+/// If working with source code that isn't from a file,
+/// you may use the id of an arbitrary path (even `""`) for
+/// functions requiring a [`SourceId`].
 pub fn id(input: &PathBuf) -> SourceId {
     input.to_string_lossy().to_string()
 }
