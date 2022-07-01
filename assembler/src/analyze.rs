@@ -19,16 +19,24 @@ struct ParseErrorsAnalysis {
 }
 
 impl ParseErrorsAnalysis {
-    fn new() -> Self {
-        Default::default()
-    }
-
     fn push_error(&mut self, single_error: SingleError, span: &SpanWithSource) {
         self.errors.push(Spanned(span.clone(), single_error));
     }
 }
 
-impl MutVisitor for ParseErrorsAnalysis {
+impl Visit for ParseErrorsAnalysis {
+    type Data = ();
+
+    fn new(_data: Self::Data) -> Self {
+        Default::default()
+    }
+
+    type Output = ();
+    fn finish(self) -> (Self::Output, Vec<Error>) {
+        ((), self.errors)
+    }
+
+
     fn enter_program_block_error(&mut self, span: &SpanWithSource) {
         self.push_error(BadProgramBlock, span);
     }
@@ -59,12 +67,20 @@ struct DuplicateLabelsAnalysis {
 }
 
 impl DuplicateLabelsAnalysis {
-    fn new() -> Self {
-        Default::default()
-    }
 }
 
-impl MutVisitor for DuplicateLabelsAnalysis {
+impl Visit for DuplicateLabelsAnalysis {
+    type Data = ();
+
+    fn new(_data: ()) -> Self {
+        Default::default()
+    }
+
+    type Output = ();
+    fn finish(self) -> (Self::Output, Vec<Error>) {
+        ((), self.errors)
+    }
+
     fn exit_file(&mut self, _file: &File, _span: &SpanWithSource) {
         let DuplicateLabelsAnalysis { errors, labels } = self;
         labels.iter()
@@ -132,16 +148,22 @@ struct SymbolTableAnalysis {
     symbol_table: SymbolTable,
 }
 
-impl SymbolTableAnalysis {
-    fn new() -> Self {
-        Default::default()
-    }
-}
-
 const ORIG_ERROR_STARTING_ADDRESS_ESTIMATE: RoughAddr = 0x3000;
 const INSTRUCTION_ERROR_ADDRESSES_OCCUPIED_ESTIMATE: RoughAddr = 1;
 
-impl MutVisitor for SymbolTableAnalysis {
+impl Visit for SymbolTableAnalysis {
+    type Data = ();
+
+    fn new(_data: ()) -> Self {
+        Default::default()
+    }
+
+    type Output = SymbolTable;
+    fn finish(self) -> (Self::Output, Vec<Error>) {
+        (self.symbol_table, vec![])
+    }
+
+
     fn enter_label(&mut self, label: &String, _span: &SpanWithSource, location: &LocationCounter) {
         self.symbol_table.entry(label.clone())
             .and_modify(|e| *e = Err(InvalidSymbolError::Duplicated))
@@ -176,14 +198,6 @@ struct LabelOffsetBoundsAnalysis<'a> {
 }
 
 impl<'a> LabelOffsetBoundsAnalysis<'a> {
-    fn new(symbol_table: &'a SymbolTable) -> Self {
-        Self {
-            errors: Default::default(),
-            symbol_table,
-            expected_label: Default::default(),
-        }
-    }
-
     fn check_offset(&mut self, label: &String, span: &SpanWithSource, width: u8, label_addr: RoughAddr, ref_addr: RoughAddr) {
         match calculate_offset(ref_addr, label_addr) {
             Err(_) => {
@@ -212,7 +226,23 @@ impl<'a> LabelOffsetBoundsAnalysis<'a> {
     }
 }
 
-impl<'a> MutVisitor for LabelOffsetBoundsAnalysis<'a> {
+impl<'a> Visit for LabelOffsetBoundsAnalysis<'a> {
+    type Data = &'a SymbolTable;
+
+    fn new(symbol_table: &'a SymbolTable) -> Self {
+        Self {
+            errors: Default::default(),
+            symbol_table,
+            expected_label: Default::default(),
+        }
+    }
+
+    type Output = ();
+    fn finish(self) -> (Self::Output, Vec<Error>) {
+        ((), self.errors)
+    }
+
+
     fn enter_opcode_error(&mut self, _span: &SpanWithSource, _location: &LocationCounter) {
         self.expected_label = None;
     }
@@ -285,10 +315,6 @@ struct OperandTypesAnalysis {
 }
 
 impl OperandTypesAnalysis {
-    fn new() -> Self {
-        Default::default()
-    }
-
     fn check_operands(&mut self, operands: &Vec<WithErrData<Operand>>, span: &SpanWithSource) {
         if let Some(expected) = &self.expected_operands {
             // TODO: create longest common subsequence diff for more precise errors
@@ -319,7 +345,19 @@ fn orig_expected_operands() -> Vec<OperandType> {
     vec![OperandType::signed_or_unsigned_number(16)] // TODO: Disallow signed?
 }
 
-impl MutVisitor for OperandTypesAnalysis {
+impl Visit for OperandTypesAnalysis {
+    type Data = ();
+
+    fn new(_data: Self::Data) -> Self {
+        Default::default()
+    }
+
+    type Output = ();
+    fn finish(self) -> (Self::Output, Vec<Error>) {
+        ((), self.errors)
+    }
+
+
     fn enter_orig(&mut self, orig: &Vec<WithErrData<Operand>>, span: &SpanWithSource, _location: &LocationCounter) {
         self.expected_operands = Some(orig_expected_operands());
         self.check_operands(orig, span);
@@ -368,8 +406,8 @@ struct ObjectPlacementAnalysis {
     object_spans: Vec<ProgramBlockPlacement>,
 }
 
-impl ObjectPlacementAnalysis {
-    fn new() -> Self {
+impl Default for ObjectPlacementAnalysis {
+    fn default() -> Self {
         Self {
             errors: Default::default(),
             last_start: ORIG_ERROR_STARTING_ADDRESS_ESTIMATE,
@@ -379,7 +417,18 @@ impl ObjectPlacementAnalysis {
     }
 }
 
-impl MutVisitor for ObjectPlacementAnalysis {
+impl Visit for ObjectPlacementAnalysis {
+    type Data = ();
+
+    fn new(_data: ()) -> Self {
+        Default::default()
+    }
+
+    type Output = ();
+    fn finish(self) -> (Self::Output, Vec<Error>) {
+        ((), self.errors)
+    }
+
     fn exit_file(&mut self, _file: &File, span: &SpanWithSource) {
         self.object_spans.sort_unstable_by_key(|span| span.span_in_memory.start);
         for (op1, op2) in self.object_spans.iter().tuple_windows() {
@@ -441,15 +490,19 @@ impl LocationCounterState {
     }
 }
 
-fn visit(v: &mut impl MutVisitor, file: &File, span: &SpanWithSource) {
+fn visit<'a, V, D, O>(data: D, file: &File, span: &SpanWithSource) -> (O, Vec<Error>)
+    where V: Visit<Data=D, Output=O>
+{
+    let mut v = V::new(data);
     v.enter_file(file, span);
     for block in file.blocks.iter() {
-        visit_program_block(v, file.id.clone(), block);
+        visit_program_block(&mut v, file.id.clone(), block);
     }
     v.exit_file(file, span);
+    v.finish()
 }
 
-fn visit_program_block(v: &mut impl MutVisitor, id: SourceId, program_block: &WithErrData<ProgramBlock>) {
+fn visit_program_block(v: &mut impl Visit, id: SourceId, program_block: &WithErrData<ProgramBlock>) {
     let (pb_res, span) = program_block;
     let span = (id.clone(), span.clone()).into();
     match pb_res {
@@ -470,7 +523,7 @@ fn visit_program_block(v: &mut impl MutVisitor, id: SourceId, program_block: &Wi
     }
 }
 
-fn visit_orig(v: &mut impl MutVisitor, id: SourceId, orig: &WithErrData<Vec<WithErrData<Operand>>>, location_counter: &mut LocationCounter) {
+fn visit_orig(v: &mut impl Visit, id: SourceId, orig: &WithErrData<Vec<WithErrData<Operand>>>, location_counter: &mut LocationCounter) {
     let (orig_res, span) = orig;
     let span = (id.clone(), span.clone()).into();
     match orig_res {
@@ -497,7 +550,7 @@ fn visit_orig(v: &mut impl MutVisitor, id: SourceId, orig: &WithErrData<Vec<With
     }
 }
 
-fn visit_instruction(v: &mut impl MutVisitor, id: SourceId, instruction: &WithErrData<Instruction>, location_counter: &mut LocationCounter) {
+fn visit_instruction(v: &mut impl Visit, id: SourceId, instruction: &WithErrData<Instruction>, location_counter: &mut LocationCounter) {
     let (inst_res, span) = instruction;
     let span = (id.clone(), span.clone()).into();
     match inst_res {
@@ -527,7 +580,7 @@ fn visit_instruction(v: &mut impl MutVisitor, id: SourceId, instruction: &WithEr
     }
 }
 
-fn visit_label(v: &mut impl MutVisitor, id: SourceId, label: &WithErrData<String>, location_counter: &mut LocationCounter) {
+fn visit_label(v: &mut impl Visit, id: SourceId, label: &WithErrData<String>, location_counter: &mut LocationCounter) {
     let (label_res, span) = label;
     let span = (id, span.clone()).into();
     match label_res {
@@ -536,7 +589,7 @@ fn visit_label(v: &mut impl MutVisitor, id: SourceId, label: &WithErrData<String
     }
 }
 
-fn visit_opcode(v: &mut impl MutVisitor, id: SourceId, opcode: &WithErrData<Opcode>, location_counter: &mut LocationCounter) {
+fn visit_opcode(v: &mut impl Visit, id: SourceId, opcode: &WithErrData<Opcode>, location_counter: &mut LocationCounter) {
     let (opcode_res, span) = opcode;
     let span = (id, span.clone()).into();
     match opcode_res {
@@ -545,7 +598,7 @@ fn visit_opcode(v: &mut impl MutVisitor, id: SourceId, opcode: &WithErrData<Opco
     }
 }
 
-fn visit_operands(v: &mut impl MutVisitor, id: SourceId, operands: &WithErrData<Vec<WithErrData<Operand>>>, location_counter: &mut LocationCounter) {
+fn visit_operands(v: &mut impl Visit, id: SourceId, operands: &WithErrData<Vec<WithErrData<Operand>>>, location_counter: &mut LocationCounter) {
     let (ops_res, span) = operands;
     let span = (id.clone(), span.clone()).into();
     match ops_res {
@@ -559,7 +612,7 @@ fn visit_operands(v: &mut impl MutVisitor, id: SourceId, operands: &WithErrData<
     }
 }
 
-fn visit_operand(v: &mut impl MutVisitor, id: SourceId, operand: &WithErrData<Operand>, location_counter: &mut LocationCounter) {
+fn visit_operand(v: &mut impl Visit, id: SourceId, operand: &WithErrData<Operand>, location_counter: &mut LocationCounter) {
     let (op_res, span) = operand;
     let span = (id, span.clone()).into();
     match op_res {
@@ -568,7 +621,13 @@ fn visit_operand(v: &mut impl MutVisitor, id: SourceId, operand: &WithErrData<Op
     }
 }
 
-trait MutVisitor {
+trait Visit {
+    type Data;
+    fn new(data: Self::Data) -> Self;
+
+    type Output;
+    fn finish(self) -> (Self::Output, Vec<Error>);
+
     fn enter_file(&mut self, _file: &File, _span: &SpanWithSource) {}
     fn exit_file(&mut self, _file: &File, _span: &SpanWithSource) {}
 
@@ -597,6 +656,193 @@ trait MutVisitor {
     fn enter_operand(&mut self, _operand: &Operand, _span: &SpanWithSource, _location: &LocationCounter) {}
 }
 
+macro_rules! impl_visit_tuple {
+    () => {};
+    ($head:ident $head_data:ident $head_output:ident, $($tail:ident $tail_data:ident $tail_output:ident,)*) => {
+        impl<$head, $head_data, $head_output, $($tail, $tail_data, $tail_output),*> Visit for ($head, $($tail),*)
+        where
+            $head: Visit<Data=$head_data, Output=$head_output>,
+            $($tail: Visit<Data=$tail_data, Output=$tail_output>),*
+        {
+            type Data = ($head_data, $($tail_data),*);
+
+            fn new(($head_data, $($tail_data,)*): Self::Data) -> Self {
+                (
+                    $head::new($head_data),
+                    $(
+                        $tail::new($tail_data)
+                    ),*
+                )
+            }
+
+            type Output = ($head_output, $($tail_output),*);
+
+            fn finish(self) -> (Self::Output, Vec<Error>) {
+                let ($head, $($tail),*) = self;
+                let ($head_output, $head_data) = $head.finish();
+                $(
+                    let ($tail_output, $tail_data) = $tail.finish();
+                )*
+                (
+                    (
+                        $head_output,
+                        $($tail_output),*
+                    )
+                    ,
+                    concat([
+                        $head_data,
+                        $($tail_data),*
+                    ])
+                )
+            }
+
+            fn enter_file(&mut self, file: &File, span: &SpanWithSource) {
+                let ($head, $($tail,)*) = self;
+                $head.enter_file(file, span);
+                $(
+                    $tail.enter_file(file, span);
+                )*
+            }
+            fn exit_file(&mut self, file: &File, span: &SpanWithSource) {
+                let ($head, $($tail,)*) = self;
+                $head.exit_file(file, span);
+                $(
+                    $tail.exit_file(file, span);
+                )*
+            }
+
+            fn enter_program_block_error(&mut self, span: &SpanWithSource) {
+                let ($head, $($tail,)*) = self;
+                $head.enter_program_block_error(span);
+                $(
+                    $tail.enter_program_block_error(span);
+                )*
+            }
+            fn enter_program_block(&mut self, program_block: &ProgramBlock, span: &SpanWithSource) {
+                let ($head, $($tail,)*) = self;
+                $head.enter_program_block(program_block, span);
+                $(
+                    $tail.enter_program_block(program_block, span);
+                )*
+            }
+            fn exit_program_block(&mut self, program_block: &ProgramBlock, span: &SpanWithSource, location: &LocationCounter) {
+                let ($head, $($tail,)*) = self;
+                $head.exit_program_block(program_block, span, location);
+                $(
+                    $tail.exit_program_block(program_block, span, location);
+                )*
+            }
+
+            fn enter_orig_error(&mut self, span: &SpanWithSource) {
+                let ($head, $($tail,)*) = self;
+                $head.enter_orig_error(span);
+                $(
+                    $tail.enter_orig_error(span);
+                )*
+            }
+            fn enter_orig(&mut self, orig: &Vec<WithErrData<Operand>>, span: &SpanWithSource, location: &LocationCounter) {
+                let ($head, $($tail,)*) = self;
+                $head.enter_orig(orig, span, location);
+                $(
+                    $tail.enter_orig(orig, span, location);
+                )*
+            }
+            fn exit_orig(&mut self, orig: &Vec<WithErrData<Operand>>, span: &SpanWithSource, location: &LocationCounter) {
+                let ($head, $($tail,)*) = self;
+                $head.exit_orig(orig, span, location);
+                $(
+                    $tail.exit_orig(orig, span, location);
+                )*
+            }
+
+            fn enter_instruction_error(&mut self, span: &SpanWithSource, location: &LocationCounter) {
+                let ($head, $($tail,)*) = self;
+                $head.enter_instruction_error(span, location);
+                $(
+                    $tail.enter_instruction_error(span, location);
+                )*
+            }
+            fn enter_instruction(&mut self, instruction: &Instruction, span: &SpanWithSource, location: &LocationCounter) {
+                let ($head, $($tail,)*) = self;
+                $head.enter_instruction(instruction, span, location);
+                $(
+                    $tail.enter_instruction(instruction, span, location);
+                )*
+            }
+            fn exit_instruction(&mut self, instruction: &Instruction, span: &SpanWithSource, location: &LocationCounter) {
+                let ($head, $($tail,)*) = self;
+                $head.exit_instruction(instruction, span, location);
+                $(
+                    $tail.exit_instruction(instruction, span, location);
+                )*
+            }
+
+            fn enter_label_error(&mut self, span: &SpanWithSource, location: &LocationCounter) {
+                let ($head, $($tail,)*) = self;
+                $head.enter_label_error(span, location);
+                $(
+                    $tail.enter_label_error(span, location);
+                )*
+            }
+            fn enter_label(&mut self, label: &String, span: &SpanWithSource, location: &LocationCounter) {
+                let ($head, $($tail,)*) = self;
+                $head.enter_label(label, span, location);
+                $(
+                    $tail.enter_label(label, span, location);
+                )*
+            }
+
+            fn enter_opcode_error(&mut self, span: &SpanWithSource, location: &LocationCounter) {
+                let ($head, $($tail,)*) = self;
+                $head.enter_opcode_error(span, location);
+                $(
+                    $tail.enter_opcode_error(span, location);
+                )*
+            }
+            fn enter_opcode(&mut self, opcode: &Opcode, span: &SpanWithSource, location: &LocationCounter) {
+                let ($head, $($tail,)*) = self;
+                $head.enter_opcode(opcode, span, location);
+                $(
+                    $tail.enter_opcode(opcode, span, location);
+                )*
+            }
+
+            fn enter_operands_error(&mut self, span: &SpanWithSource, location: &LocationCounter) {
+                let ($head, $($tail,)*) = self;
+                $head.enter_operands_error(span, location);
+                $(
+                    $tail.enter_operands_error(span, location);
+                )*
+            }
+            fn enter_operands(&mut self, operands: &Vec<WithErrData<Operand>>, span: &SpanWithSource, location: &LocationCounter) {
+                let ($head, $($tail,)*) = self;
+                $head.enter_operands(operands, span, location);
+                $(
+                    $tail.enter_operands(operands, span, location);
+                )*
+            }
+
+            fn enter_operand_error(&mut self, span: &SpanWithSource, location: &LocationCounter) {
+                let ($head, $($tail,)*) = self;
+                $head.enter_operand_error(span, location);
+                $(
+                    $tail.enter_operand_error(span, location);
+                )*
+            }
+            fn enter_operand(&mut self, operand: &Operand, span: &SpanWithSource, location: &LocationCounter) {
+                let ($head, $($tail,)*) = self;
+                $head.enter_operand(operand, span, location);
+                $(
+                    $tail.enter_operand(operand, span, location);
+                )*
+            }
+        }
+
+        impl_visit_tuple!($($tail $tail_data $tail_output,)*);
+    }
+}
+
+impl_visit_tuple!(A DA OA, B DB OB, C DC OC, D DD OD, E DE OE,);
 
 fn analyze_lex_data(lex_data: &LexData, file_span: &SpanWithSource) -> Vec<Error> {
     let mut errors = Vec::new();
@@ -621,31 +867,22 @@ pub fn validate(lex_data: &LexData, file_spanned: &Spanned<File>) -> Vec<Error> 
     let file_span_with_source = (file.id.clone(), file_span.clone()).into();
     let errors_from_lex_data = analyze_lex_data(&lex_data, &file_span_with_source);
 
-    let mut pe = ParseErrorsAnalysis::new();
-    visit(&mut pe, file, &file_span_with_source);
+    let ((symbol_table, _, _, _, _), first_pass_errors) =
+        visit::<(
+            SymbolTableAnalysis,
+            ParseErrorsAnalysis,
+            DuplicateLabelsAnalysis,
+            OperandTypesAnalysis,
+            ObjectPlacementAnalysis,
+        ), _, _>(((), (), (), (), ()), file, &file_span_with_source);
 
-    let mut dl = DuplicateLabelsAnalysis::new();
-    visit(&mut dl, file, &file_span_with_source);
-
-    let mut ot = OperandTypesAnalysis::new();
-    visit(&mut ot, file, &file_span_with_source);
-
-    let mut st = SymbolTableAnalysis::new();
-    visit(&mut st, file, &file_span_with_source);
-
-    let mut lob = LabelOffsetBoundsAnalysis::new(&st.symbol_table);
-    visit(&mut lob, file, &file_span_with_source);
-
-    let mut op = ObjectPlacementAnalysis::new();
-    visit(&mut op, file, &file_span_with_source);
+    let (_, second_pass_errors) =
+        visit::<LabelOffsetBoundsAnalysis, _, _>(&symbol_table, file, &file_span_with_source);
 
     concat([
         errors_from_lex_data,
-        pe.errors,
-        dl.errors,
-        ot.errors,
-        lob.errors,
-        op.errors,
+        first_pass_errors,
+        second_pass_errors,
     ])
 }
 
