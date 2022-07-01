@@ -1,3 +1,29 @@
+//! Functions for identifying errors in the syntax trees produced by [`parse`](crate::parse).
+//!
+//! This module is primarily for semantic analysis, or identifying semantic errors
+//! in a syntax tree. These are errors that don't have to do with incorrect syntax;
+//! for example, branching (with `BR`) to a label that isn't defined. It is correct
+//! syntax to use `BR` with a label, but the label doesn't refer to any address,
+//! so the assembler wouldn't have the necessary information to calculate an offset.
+//! In a situation like this where the syntax is correct, but the meaning (semantics)
+//! is still invalid or contradictory, it is a semantic error.
+//!
+//! Secondarily, this module also identifies parse (or *syntax*) errors
+//! inserted into the syntax tree during parsing. When performing semantic analysis,
+//! the parse errors are typically ignored, in order to identify as many independent errors
+//! as possible.
+//! When the parse errors affect the meaning, we attempt to work around the missing semantic
+//! information by making reasonable assumptions.
+//! For example, if program starts with `.ORIG xOOPS`, some analyses may assume
+//! that the intent was to place the program at `x3000`, the start of user space,
+//! commonly used in examples.
+//!
+//! In other words, our approach to semantic analysis tries to avoid identifying
+//! multiple errors stemming from the same root cause, particularly when the root
+//! cause is a parse error. The goal is to be clear where and why a change needs to be
+//! made to make the program valid, not to show every problem that an error implies.
+//! So when semantic analysis encounters a parse error, it makes whatever assumptions
+//! it needs in order to treat the rest of the program as normal.
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
@@ -24,6 +50,7 @@ impl ParseErrorsAnalysis {
     }
 }
 
+// TODO: use context to provide useful hints as to *why* the error occurred
 impl Visit for ParseErrorsAnalysis {
     type Data = ();
 
@@ -35,7 +62,6 @@ impl Visit for ParseErrorsAnalysis {
     fn finish(self) -> (Self::Output, Vec<Error>) {
         ((), self.errors)
     }
-
 
     fn enter_program_block_error(&mut self, span: &SpanWithSource) {
         self.push_error(BadProgramBlock, span);
@@ -64,9 +90,6 @@ impl Visit for ParseErrorsAnalysis {
 struct DuplicateLabelsAnalysis {
     errors: Vec<Error>,
     labels: HashMap<String, Vec<SpanWithSource>>,
-}
-
-impl DuplicateLabelsAnalysis {
 }
 
 impl Visit for DuplicateLabelsAnalysis {
@@ -621,6 +644,11 @@ fn visit_operand(v: &mut impl Visit, id: SourceId, operand: &WithErrData<Operand
     }
 }
 
+/// A trait for syntax tree visitors, to be used by [`visit`].
+///
+/// This trait is really just a way to separate the logic of different
+/// types of analysis. Analysis that can be done in one independent
+/// pass over the tree can be encapsulated in its own `Visit` implementation.
 trait Visit {
     type Data;
     fn new(data: Self::Data) -> Self;
@@ -656,6 +684,9 @@ trait Visit {
     fn enter_operand(&mut self, _operand: &Operand, _span: &SpanWithSource, _location: &LocationCounter) {}
 }
 
+/// Implement [`Visit`] for tuples of [`Visit`].
+/// In general, each method is called on the elements of the tuple in sequence,
+/// and if there are results, they are combined in a result tuple in the same sequence.
 macro_rules! impl_visit_tuple {
     () => {};
     ($head:ident $head_data:ident $head_output:ident, $($tail:ident $tail_data:ident $tail_output:ident,)*) => {
@@ -861,6 +892,23 @@ fn analyze_lex_data(lex_data: &LexData, file_span: &SpanWithSource) -> Vec<Error
     errors
 }
 
+/// Identify as many independent errors as possible which are present in the given [`File`](crate::parse::File).
+///
+/// An error indicates that assembly will not be successful, and why.
+/// If the result is an empty vector, the program is valid and assembly will succeed (save for bugs in analysis or assembly).
+///
+/// The [`LexData`](crate::lex::LexData) provides information from lexing that is
+/// lost during parsing, but can help produce more useful errors.
+///
+/// See [the `error` module](crate::error) for details about the types of errors
+/// and how to present them.
+///
+/// See the [module-level documentation](crate::analyze) for a discussion of this
+/// function's philosophy toward generating errors. In short, it will try to
+/// identify a set of independent issues that can be corrected to make
+/// the program valid, but not necessarily *all* the issues present. It
+/// also makes some assumptions which may not always be correct depending
+/// on the intent of the input's programmer.
 pub fn validate(lex_data: &LexData, file_spanned: &Spanned<File>) -> Vec<Error> {
     let (file, file_span) = file_spanned;
 
