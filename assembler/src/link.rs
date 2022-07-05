@@ -1,11 +1,25 @@
+//! Functions and data structures for linking [`Object`](crate::assemble::Object)s
+//! produced by [initial assembly](crate::assemble::assemble).
+//!
+//! Linking is the process of assembling instructions in an object which
+//! refer to labels in other objects. When writing an LC-3 program, this
+//! allows referencing code which *other* programmers have assembled and
+//! distributed as objects.
+//!
+//! This module assumes that all objects share a global namespace for labels.
+//! **Linking two or more objects which each define the same label will result in undefined behavior.**
+
 use std::collections::HashMap;
 use lc3_isa::{Addr, Word};
 use crate::assemble::{assemble_instruction, AssemblyResult, Object, ObjectWord, ObjectBlock, SymbolTable};
 use crate::error::SingleError;
 
+/// A block of LC-3 words and a target starting memory address.
+///
+/// `origin` is the intended address of the first word in `words` when loading the block.
 pub struct Block {
-    pub(crate) origin: Addr,
-    pub(crate) words: Vec<Word>,
+    pub origin: Addr,
+    pub words: Vec<Word>,
 }
 
 fn link_object_block(symbol_table: &SymbolTable, block: ObjectBlock) -> Result<Block, SingleError> {
@@ -49,6 +63,11 @@ pub(crate) fn link_object_blocks(symbol_table: &SymbolTable, blocks: Vec<ObjectB
         .collect()
 }
 
+
+/// Links a set of [`Object`](crate::assemble::Object)s to finish
+/// assembling them into a set of loadable memory blocks.
+///
+/// See the [module-level documentation](crate::link) for details on the linking process.
 pub fn link(objects: impl IntoIterator<Item=Object>) -> Result<Vec<Block>, SingleError> {
     let objects = objects.into_iter().collect::<Vec<_>>();
 

@@ -1,3 +1,5 @@
+//! Error types and associated functions.
+
 use ariadne::{Label, Report, ReportBuilder, ReportKind};
 use std::cmp::max;
 use lc3_isa::SignedWord;
@@ -9,10 +11,14 @@ use crate::parse::Operand;
 use std::ops::Range;
 
 
+/// This crate's primary error type. Can represent multiple errors from the entire assembly process.
 #[derive(Debug)]
 pub enum Error {
+    /// A single error and the ID of the source file which caused it.
     Single(SourceId, SingleError),
+    /// A single error and a span indicating the main substring of source code which caused it.
     Spanned(SpanWithSource, SingleError),
+    /// A set of errors.
     Multiple(Vec<Error>),
 }
 
@@ -60,6 +66,14 @@ impl From<(SourceId, chumsky::error::Simple<lex::Token>)> for Error {
 }
 
 impl Error {
+    /// Produce a set of error reports for this [`Error`], which can then be printed.
+    ///
+    /// One report will be produced for each [`SingleError`] in the [`Error`].
+    /// Each report for an [`Error::Spanned`] will annotate the substring
+    /// which caused the error.
+    ///
+    /// To print the reports, you will need an appropriate [`ariadne::Cache`];
+    /// use [`sources`](crate::sources).
     pub fn report(self) -> Vec<Report<SpanWithSource>> {
         use Error::*;
         match self {
@@ -79,6 +93,9 @@ impl Error {
         }
     }
 
+    /// Produce a `String` containing error messages for this [`Error`].
+    ///
+    /// To create an appropriate `cache`, use [`sources`](crate::sources).
     pub fn report_to_string(self, mut cache: impl ariadne::Cache<SourceId>) -> Result<String, std::io::Error> {
         let mut s = Vec::new();
         for report in self.report() {
@@ -87,6 +104,11 @@ impl Error {
         Ok(String::from_utf8_lossy(&s).to_string())
     }
 
+    /// Return the first [`SingleError`] in this [`Error`], if it contains any, otherwise `None`.
+    ///
+    /// Can be used to present only one error in a set,
+    /// or to get the only error in an [`Error`]
+    /// that is known to only contain one.
     pub fn get_first_single_error(&self) -> Option<&SingleError> {
         use Error::*;
         match self {
@@ -105,39 +127,101 @@ pub(crate) type RoughAddr = i32;
 
 use SingleError::*;
 
+/// An independent error without associated location data.
 #[derive(Debug)]
 pub enum SingleError {
+    /// A `std::io::Error`.
     Io(std::io::Error),
+    /// An error which occurred during lexing.
+    ///
+    /// Lexing attempts to be error-tolerant,
+    /// successfully producing invalid tokens for invalid input,
+    /// so this error indicates a bug in [`lex`](crate::lex).
     Lex(chumsky::error::Simple<char>),
+    /// An error which occurred during parsing.
+    ///
+    /// Parsing attempts to be error-tolerant,
+    /// successfully producing a syntax tree even for invalid input,
+    /// so this error indicates a bug in [`parse`](crate::parse).
     Parse(chumsky::error::Simple<lex::Token>),
+    /// An error which occurred during assembly.
+    ///
+    /// May indicate that the input was invalid or that
+    /// there is a bug in [`assemble`](mod@crate::assemble).
     Assemble,
+    /// An error which occurred during linking.
+    ///
+    /// May indicate that the inputs were invalid or that
+    /// there is a bug in [`link`](crate::link).
     Link,
+    /// An error which occurred during layering due to invalid input.
     Layer,
 
+    /// More inputs were provided than could be assigned [`SourceId`](crate::SourceId)s.
+    /// Should never occur in reasonable use cases.
     TooManyInputs,
 
+    /// Source assumed to be a program block could not be parsed.
     BadProgramBlock,
+    /// Source assumed to be an instruction could not be parsed.
     BadInstruction,
+    /// Source assumed to be a label could not be parsed.
     BadLabel,
+    /// Source assumed to be an opcode could not be parsed.
     BadOpcode,
+    /// Source assumed to be a list of operands could not be parsed.
     BadOperands,
+    /// Source assumed to be an operand could not be parsed.
     BadOperand,
-    WrongNumberOfOperands { expected: usize, actual: usize },
-    OperandTypeMismatch { expected: OperandType, actual: OperandType },
-    DuplicateLabel { label: String, occurrences: Vec<SpanWithSource>, },
-    InvalidLabelReference { label: String, reason: InvalidReferenceReason },
-    LabelTooDistant { label: String, width: u8, est_ref_pos: RoughAddr, est_label_pos: RoughAddr, offset: SignedWord },
+    /// An operand list contained the wrong number of operands for an instruction.
+    WrongNumberOfOperands {
+        /// The correct number of operands for the instruction, given the opcode.
+        expected: usize,
+        /// The number of operands found in the operand list.
+        actual: usize
+    },
+    /// The wrong type of operand was given for an instruction.
+    OperandTypeMismatch {
+        /// The correct type of operand for the instruction.
+        expected: OperandType,
+        /// The given operand's type.
+        actual: OperandType
+    },
+    /// The same label was defined at two or more addresses.
+    DuplicateLabel {
+        /// The label.
+        label: String,
+        /// The set of occurrences of the label in the source code.
+        occurrences: Vec<SpanWithSource>,
+    },
+    /// An instruction can't be assembled due to a label reference given as an operand.
+    InvalidLabelReference {
+        /// The label.
+        label: String,
+        /// The specific reason the instruction can't be assembled.
+        reason: InvalidReferenceReason
+    },
+    /// Two program blocks span at least one common memory location.
     ProgramBlocksOverlap { placement1: ProgramBlockPlacement, placement2: ProgramBlockPlacement },
+    /// The lexer produced no tokens; probably indicates no content in the source file.
     NoTokens,
+    /// The lexer produced no token for `.ORIG`; this will likely result in no valid program blocks being parsed.
     NoOrig,
+    /// The lexer produced no token for `.END`; this will likely result in no valid program blocks being parsed.
     NoEnd,
 }
 
+/// A reason that an instruction cannot be assembled due to a label reference operand.
 #[derive(Debug)]
 pub enum InvalidReferenceReason {
+    /// The label is not defined in the file.
     Undefined,
+    /// The label is defined at more than one address in the file.
     Duplicated,
+    /// The label is defined at an invalid address.
     OutOfBounds,
+    /// The label is so far from the reference that the required offset would overflow the available bits.
+    TooDistant { width: u8, est_ref_pos: RoughAddr, est_label_pos: RoughAddr, offset: SignedWord },
 }
 
 impl SingleError {
@@ -167,18 +251,17 @@ impl SingleError {
                 format!("same label used for multiple locations: {}", label),
             InvalidLabelReference { label, reason } => {
                 let reason_str = match reason {
-                    InvalidReferenceReason::Undefined => "not previously defined",
-                    InvalidReferenceReason::Duplicated => "defined in multiple locations",
-                    InvalidReferenceReason::OutOfBounds => "defined at invalid address",
+                    InvalidReferenceReason::Undefined => "not previously defined".to_string(),
+                    InvalidReferenceReason::Duplicated => "defined in multiple locations".to_string(),
+                    InvalidReferenceReason::OutOfBounds => "defined at invalid address".to_string(),
+                    InvalidReferenceReason::TooDistant { width, est_ref_pos, est_label_pos, offset  } =>
+                        format!("label {} at {:#0label_pos_width$X} referenced at {:#0ref_pos_width$X}; too distant, cannot represent offset of {} in available bits: {}",
+                                label, est_label_pos, est_ref_pos, offset, width,
+                                // TODO: Rust '#X' formatter automatically fixes width to multiple of 4... find or implement workaround to control sign-extension; for example, for 9-bit signed offsets, we would want to display 0x2FF, not 0xFEFF. Showing as decimal for now.
+                                label_pos_width = max(4, min_signed_hex_digits_required(*est_ref_pos) as usize),
+                                ref_pos_width = max(4, min_signed_hex_digits_required(*est_label_pos) as usize),)
                 };
                 format!("reference to label {} invalid: {}", label, reason_str)
-            }
-            LabelTooDistant { label, width, est_ref_pos, est_label_pos, offset } => {
-                format!("label {} at {:#0label_pos_width$X} referenced at {:#0ref_pos_width$X}; too distant, cannot represent offset of {} in available bits: {}",
-                        label, est_label_pos, est_ref_pos, offset, width,
-                        // TODO: Rust '#X' formatter automatically fixes width to multiple of 4... find or implement workaround to control sign-extension; for example, for 9-bit signed offsets, we would want to display 0x2FF, not 0xFEFF. Showing as decimal for now.
-                        label_pos_width = max(4, min_signed_hex_digits_required(*est_ref_pos) as usize),
-                        ref_pos_width = max(4, min_signed_hex_digits_required(*est_label_pos) as usize),)
             }
             ProgramBlocksOverlap { placement1, placement2 } => {
                 format!("program block {} in file occupying [{:#0o1s_width$X}, {:#0o1e_width$X}) overlaps program block {} occupying [{:#0o2s_width$X}, {:#0o2e_width$X})",
@@ -250,13 +333,24 @@ fn report_single(id: SourceId, span: Option<Span>, error: SingleError) -> Report
 }
 
 
+/// A type of operand, including number width constraints.
 #[derive(Clone, Debug)]
 pub enum OperandType {
+    /// A register reference.
     Register,
+    /// An unqualified number for use with `.BLKW`.
     UnqualifiedNumber,
+    /// A number with a specific sign and width.
     Number { signed: bool, width: u8 },
+    /// A string of characters.
     String,
+    /// A label reference.
     Label,
+    /// A type of operand that includes multiple other types.
+    /// An operand of this type can be either of the contained types.
+    ///
+    /// Used for operands like PC offsets; the type of a PC offset
+    /// is a label OR a signed number.
     Or(Box<OperandType>, Box<OperandType>)
 }
 
@@ -398,10 +492,11 @@ impl OperandType {
     }
 }
 
+/// Data indicating the source string indices and memory addresses spanned by a program block.
 #[derive(Clone, Debug)]
 pub struct ProgramBlockPlacement {
-    pub(crate) position_in_file: usize,
-    pub(crate) span_in_file: SpanWithSource,
-    pub(crate) span_in_memory: Range<RoughAddr>,
+    pub position_in_file: usize,
+    pub span_in_file: SpanWithSource,
+    pub span_in_memory: Range<RoughAddr>,
 }
 

@@ -236,12 +236,14 @@ impl<'a> LabelOffsetBoundsAnalysis<'a> {
                 if util::min_signed_width(offset as i32) > width {
                     self.errors.push(
                         Spanned(span.clone(),
-                            LabelTooDistant {
+                            InvalidLabelReference {
                                 label: label.clone(),
-                                width,
-                                est_ref_pos: ref_addr,
-                                offset,
-                                est_label_pos: label_addr,
+                                reason: InvalidReferenceReason::TooDistant {
+                                    width,
+                                    est_ref_pos: ref_addr,
+                                    offset,
+                                    est_label_pos: label_addr,
+                                }
                             }));
                 }
             }

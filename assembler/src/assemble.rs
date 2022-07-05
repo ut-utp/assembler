@@ -1,3 +1,9 @@
+//! Functions and data structures for assembling the syntax trees produced by [`parse`](crate::parse).
+//!
+//! This module is for assembling: converting all possible instructions to binary machine code,
+//! only leaving those which refer to external labels, which are assembled in
+//! the [`link`](crate::link) step.
+
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::num::TryFromIntError;
@@ -141,12 +147,18 @@ struct FirstPassBlock {
     instructions: Vec<Instruction>,
 }
 
+/// An assembled, but unlinked program.
+///
+/// Every instruction comprising the Object is assembled to binary
+/// unless it refers to an external label.
+///
+/// Includes a symbol table of labels which other Objects can refer to.
 pub struct Object {
     pub(crate) symbol_table: SymbolTable,
     pub(crate) blocks: Vec<ObjectBlock>,
 }
 
-pub struct ObjectBlock {
+pub(crate) struct ObjectBlock {
     pub(crate) origin: Addr,
     pub(crate) words: Vec<ObjectWord>,
 }
@@ -399,11 +411,26 @@ fn second_pass(symbol_table: SymbolTable, fp_blocks: Vec<FirstPassBlock>) -> Res
     Ok(Object { symbol_table, blocks })
 }
 
-pub(crate) fn get_orig(orig_operands: WithErrData<Vec<WithErrData<Operand>>>) -> Result<Addr, ()> {
+fn get_orig(orig_operands: WithErrData<Vec<WithErrData<Operand>>>) -> Result<Addr, ()> {
     let orig_operand = result(orig_operands)?.remove(0);
     result(orig_operand)?.try_into()
 }
 
+/// Assemble the given syntax tree.
+///
+/// All instructions are converted to binary machine code,
+/// except those which refer to labels in other files.
+///
+/// *May* return `Err` if the program is invalid,
+/// but for ease of assembly, **not all errors are checked**,
+/// and the `Err` will not contain information on
+/// why the error occurred. **For full error checking and detailed feedback,
+/// you should [`validate`](crate::analyze::validate) the input first.**
+///
+/// All labels defined in the file are treated as
+/// global to all program blocks in the file.
+/// In a sense, all the program blocks are
+/// "automatically linked."
 pub fn assemble(file: parse::File) -> Result<Object, ()> {
     let block_data =
         file.blocks.into_iter()

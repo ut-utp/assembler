@@ -442,11 +442,14 @@ mod error {
              .BLKW 255\n\
              LABEL .FILL 0x1234\n\
              .END"
-            => SingleError::LabelTooDistant {
-                est_ref_pos: 0x3000,
-                est_label_pos: 0x3101,
-                offset: 0b1_0000_0000,
-                width: 9,
+            => SingleError::InvalidLabelReference {
+                reason: InvalidReferenceReason::TooDistant {
+                    est_ref_pos: 0x3000,
+                    est_label_pos: 0x3101,
+                    offset: 0b1_0000_0000,
+                    width: 9,
+                    ..
+                },
                 ..
             },
         label_too_distant_negative:
@@ -456,11 +459,15 @@ mod error {
              .BLKW 255\n\
              LEA R0, LABEL\n\
              .END"
-            => SingleError::LabelTooDistant {
-                est_ref_pos: 0x3101,
-                est_label_pos: 0x3001,
-                offset: -0b1_0000_0001,
-                width: 9,
+            =>
+        SingleError::InvalidLabelReference {
+                reason: InvalidReferenceReason::TooDistant {
+                    est_ref_pos: 0x3101,
+                    est_label_pos: 0x3001,
+                    offset: -0b1_0000_0001,
+                    width: 9,
+                    ..
+                },
                 ..
             },
     }
@@ -553,8 +560,14 @@ mod error {
                 SingleError::WrongNumberOfOperands { expected: 3, actual: 1 },
                 SingleError::ProgramBlocksOverlap { .. },
                 SingleError::OperandTypeMismatch { .. },
-                SingleError::InvalidLabelReference { .. },
-                SingleError::LabelTooDistant { .. },
+                SingleError::InvalidLabelReference {
+                    reason: InvalidReferenceReason::Duplicated,
+                    ..
+                },
+                SingleError::InvalidLabelReference {
+                    reason: InvalidReferenceReason::TooDistant { .. },
+                    ..
+                },
             },
     }
 
