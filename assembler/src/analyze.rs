@@ -917,6 +917,7 @@ pub fn validate(lex_data: &LexData, file_spanned: &Spanned<File>) -> Vec<Error> 
     let file_span_with_source = (file.id.clone(), file_span.clone()).into();
     let errors_from_lex_data = analyze_lex_data(&lex_data, &file_span_with_source);
 
+    // For instructions on how to add a new analysis pass, see `/assembler/docs/analyze.md`.
     let ((symbol_table, _, _, _, _), first_pass_errors) =
         visit::<(
             SymbolTableAnalysis,
