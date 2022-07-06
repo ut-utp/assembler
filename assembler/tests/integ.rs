@@ -20,7 +20,8 @@ fn load_store_medium() {
             0xBDFF,
             0x7E3E,
             0xF025,
-        ]
+        ],
+        LeniencyLevel::Lenient
     );
 }
 
@@ -28,8 +29,8 @@ fn load_store_medium() {
 mod single_instruction {
     use super::*;
 
-    fn single_instruction_test(input: &str, expected: Word) {
-        multiple_output_test(input, &[expected]);
+    fn single_instruction_test(input: &str, expected: Word, leniency: LeniencyLevel) {
+        multiple_output_test(input, &[expected], leniency);
     }
 
     macro_rules! tests {
@@ -45,7 +46,24 @@ mod single_instruction {
                 $(
                     #[test]
                     fn $test_name() {
-                        single_instruction_test($instruction, $expected);
+                        single_instruction_test($instruction, $expected, LeniencyLevel::Lenient);
+                    }
+                )+
+            }
+        };
+        ($tests_name:ident (Strict)
+            $(
+                $test_name:ident: $instruction:expr => $expected:expr
+            ),+
+            $(,)*
+        ) => {
+            mod $tests_name {
+                use super::*;
+
+                $(
+                    #[test]
+                    fn $test_name() {
+                        single_instruction_test($instruction, $expected, LeniencyLevel::Strict);
                     }
                 )+
             }
@@ -111,12 +129,12 @@ mod single_instruction {
 
     #[test]
     fn rti() {
-        single_instruction_test("RTI", 0x8000);
+        single_instruction_test("RTI", 0x8000, LeniencyLevel::Lenient);
     }
 
     #[test]
     fn ret() {
-        single_instruction_test("RET", 0xC1C0);
+        single_instruction_test("RET", 0xC1C0, LeniencyLevel::Lenient);
     }
 
     tests! { ldr
@@ -169,6 +187,21 @@ mod single_instruction {
         nzp:     "BRnzp #0"  => 0x0E00,
         neg_imm: "BRnzp #-1" => 0x0FFF,
         pos_imm: "BRnzp #1"  => 0x0E01,
+        lenient: "BRpnz #1"  => 0x0E01,
+        max_imm: "BRn #255"  => 0x08FF,
+        min_imm: "BRz #-256" => 0x0500,
+    }
+    tests! { br_strict (Strict)
+        minimal: "BR #0"     => 0x0E00,
+        n:       "BRn #0"    => 0x0800,
+        z:       "BRz #0"    => 0x0400,
+        p:       "BRp #0"    => 0x0200,
+        nz:      "BRnz #0"   => 0x0C00,
+        np:      "BRnp #0"   => 0x0A00,
+        zp:      "BRzp #0"   => 0x0600,
+        nzp:     "BRnzp #0"  => 0x0E00,
+        neg_imm: "BRnzp #-1" => 0x0FFF,
+        pos_imm: "BRnzp #1"  => 0x0E01,
         max_imm: "BRn #255"  => 0x08FF,
         min_imm: "BRz #-256" => 0x0500,
     }
@@ -186,7 +219,7 @@ mod single_instruction {
                 $(
                     #[test]
                     fn $test_name() {
-                        multiple_output_test($instruction, $expected);
+                        multiple_output_test($instruction, $expected, LeniencyLevel::Lenient);
                     }
                 )+
             }
@@ -291,14 +324,14 @@ mod single_instruction {
     }
 }
 
-fn multiple_output_test(input: &str, expected: &[Word]) {
+fn multiple_output_test(input: &str, expected: &[Word], leniency: LeniencyLevel) {
     let input = format!(".ORIG x3000\n{}\n.END", input);
-    test(input.as_str(), 0x3000, expected);
+    test(input.as_str(), 0x3000, expected, leniency);
 }
 
-fn test(input: &str, orig: usize, expected_mem: &[Word]) {
+fn test(input: &str, orig: usize, expected_mem: &[Word], leniency: LeniencyLevel) {
     let src = input.to_string();
-    let mem = assemble(&"<test>".to_string(), &src, LeniencyLevel::Lenient, true).unwrap();
+    let mem = assemble(&"<test>".to_string(), &src, leniency, true).unwrap();
 
     for i in 0..orig {
         assert_mem(&mem, i, 0x0000);
@@ -326,7 +359,7 @@ mod error {
     macro_rules! single_error_tests {
         ($tests_name:ident
             $(
-                $test_name:ident: $source:expr => $expected:pat
+                $test_name:ident $(($leniency:ident))?: $source:expr => $expected:pat
             ),+
             $(,)*
         ) => {
@@ -337,7 +370,9 @@ mod error {
                     #[test]
                     fn $test_name() {
                         let src = $source.to_string();
-                        match parse_and_analyze(&"<test>".to_string(), &src, LeniencyLevel::Lenient) {
+                        let mut leniency = LeniencyLevel::Lenient;
+                        $(leniency = LeniencyLevel::$leniency;)?
+                        match parse_and_analyze(&"<test>".to_string(), &src, leniency) {
                             Err(error) => {
                                 match error {
                                     Error::Multiple(errors) => {
@@ -374,6 +409,12 @@ mod error {
              #OOPS\n\
              .END"
             => SingleError::BadInstruction,
+        strict_br_nzp_out_of_order (Strict):
+            ".ORIG x3000\n\
+             LOOP ADD R0, R0, R0\n\
+             BRpnz LOOP\n\
+             .END"
+            => SingleError::BadInstruction, // Doesn't have to be this error, specifically.
         bad_label:
             ".ORIG x3000\n\
              #OOPS ADD R0, R0, R0\n\

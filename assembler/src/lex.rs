@@ -322,6 +322,48 @@ fn comment() -> impl Parser<char, Token, Error=Simple<char>> {
         .to(Token::Comment)
 }
 
+fn branch_opcode(leniency: LeniencyLevel) -> impl Parser<char, Opcode, Error=Simple<char>> {
+    let br = just::<char, _, _>("BR");
+    let res: Box<dyn Parser<char, Opcode, Error=Simple<char>>> =
+        match leniency {
+            LeniencyLevel::Lenient => Box::new(
+                br
+                    .ignore_then(one_of("NZP").repeated().at_most(3))
+                    .map::<Opcode, _>(|cond_code_chars| {
+                        let cond_codes =
+                            if cond_code_chars.is_empty() {
+                                ConditionCodes { n: true, z: true, p: true }
+                            } else {
+                                let n = cond_code_chars.contains(&'N');
+                                let z = cond_code_chars.contains(&'Z');
+                                let p = cond_code_chars.contains(&'P');
+                                ConditionCodes { n, z, p }
+                            };
+                        Opcode::Br(cond_codes)
+                    }),
+            ),
+            LeniencyLevel::Strict => Box::new(
+                br
+                    .ignore_then(just("N").or_not())
+                    .then(just("Z").or_not())
+                    .then(just("P").or_not())
+                    .map::<Opcode, _>(|((n, z), p)| {
+                        let cond_codes =
+                            if n.is_none() && z.is_none() && p.is_none() {
+                                ConditionCodes { n: true, z: true, p: true }
+                            } else {
+                                let n = n.is_some();
+                                let z = z.is_some();
+                                let p = p.is_some();
+                                ConditionCodes { n, z, p }
+                            };
+                        Opcode::Br(cond_codes)
+                    }),
+            )
+        };
+    res
+}
+
 fn tokens(leniency: LeniencyLevel) -> impl Parser<char, Vec<Spanned<Token>>, Error=Simple<char>> {
     let newline = text::newline()
         .to(Token::Newline);
@@ -337,21 +379,6 @@ fn tokens(leniency: LeniencyLevel) -> impl Parser<char, Vec<Spanned<Token>>, Err
             .or(end().ignored());
 
     use Opcode::*;
-    let branch_opcode =
-        just("BR")
-            .ignore_then(one_of("NZP").repeated().at_most(3))
-            .map::<Opcode, _>(|cond_code_chars| {
-                let cond_codes =
-                    if cond_code_chars.is_empty() {
-                        ConditionCodes { n: true, z: true, p: true }
-                    } else {
-                        let n = cond_code_chars.contains(&'N');
-                        let z = cond_code_chars.contains(&'Z');
-                        let p = cond_code_chars.contains(&'P');
-                        ConditionCodes { n, z, p }
-                    };
-                Br(cond_codes)
-            });
 
     // These options are separated by `or` instead of all belonging
     // to one tuple passed to `choice` because `choice` only supports
@@ -360,7 +387,7 @@ fn tokens(leniency: LeniencyLevel) -> impl Parser<char, Vec<Spanned<Token>>, Err
     let opcode = choice((
         one_opcode("ADD", Add),
         one_opcode("AND", And),
-        branch_opcode,
+        branch_opcode(leniency),
         one_opcode("JMP", Jmp),
         one_opcode("JSRR", Jsrr),
         one_opcode("JSR", Jsr),
