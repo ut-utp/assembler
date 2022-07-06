@@ -13,12 +13,11 @@ jobs:
       fail-fast: false
       matrix:
         crate: [ lc3-assembler ]
-        os: [ windows-latest, ubuntu-latest, macOS-latest ]
+        os: [ windows-latest, ubuntu-latest, macos-latest ]
         rust:
           - stable
-          - beta
           - nightly
-          - 1.42.0
+          - 1.56.1
 
     runs-on: ${{ matrix.os }}
     steps:
