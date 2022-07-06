@@ -32,9 +32,9 @@ use itertools::{concat, Itertools, zip};
 use lc3_isa::{Addr, Word};
 use crate::lex::{LexData, Opcode};
 use crate::parse::{File, Instruction, Operand, ProgramBlock};
-use crate::{get, get_result, SourceId, Spanned, SpanWithSource, util, WithErrData};
+use crate::{get, get_result, LeniencyLevel, SourceId, Spanned, SpanWithSource, util, WithErrData};
 use crate::assemble::calculate_offset;
-use crate::error::{Error, InvalidReferenceReason, OperandType, ProgramBlockPlacement, RoughAddr, SingleError};
+use crate::error::{Error, InvalidReferenceReason, OperandType, ProgramBlockPlacement, RoughAddr, SingleError, StrictlyInvalidLabelReason};
 use crate::error::OperandType::*;
 use crate::error::Error::*;
 use crate::error::SingleError::*;
@@ -420,6 +420,42 @@ impl Visit for OperandTypesAnalysis {
 
     fn enter_operands(&mut self, operands: &Vec<WithErrData<Operand>>, span: &SpanWithSource, _location: &LocationCounter) {
         self.check_operands(operands, span);
+    }
+}
+
+
+#[derive(Default)]
+struct StrictLabelAnalysis {
+    errors: Vec<Error>,
+}
+
+fn validate_strict_label(label: &String) -> Option<StrictlyInvalidLabelReason> {
+    let contains_underscores = label.contains('_');
+    let too_long = label.len() > 20;
+
+    match (contains_underscores, too_long) {
+        (false, false) => None,
+        (true,  false) => Some(StrictlyInvalidLabelReason::ContainsUnderscores),
+        (false, true)  => Some(StrictlyInvalidLabelReason::TooLong),
+        (true,  true)  => Some(StrictlyInvalidLabelReason::ContainsUnderscoresAndTooLong),
+    }
+}
+
+impl Visit for StrictLabelAnalysis {
+    type Data = ();
+    fn new(_data: Self::Data) -> Self { Default::default() }
+    type Output = ();
+    fn finish(self) -> (Self::Output, Vec<Error>) { ((), self.errors) }
+
+    fn enter_label(&mut self, label: &String, span: &SpanWithSource, _location: &LocationCounter) {
+        if let Some(error_reason) = validate_strict_label(label) {
+            self.errors.push(
+                Error::Spanned(span.clone(),
+                   StrictlyInvalidLabel {
+                       label: label.clone(),
+                       reason: error_reason
+                   }));
+        }
     }
 }
 
@@ -911,7 +947,7 @@ fn analyze_lex_data(lex_data: &LexData, file_span: &SpanWithSource) -> Vec<Error
 /// the program valid, but not necessarily *all* the issues present. It
 /// also makes some assumptions which may not always be correct depending
 /// on the intent of the input's programmer.
-pub fn validate(lex_data: &LexData, file_spanned: &Spanned<File>) -> Vec<Error> {
+pub fn validate(lex_data: &LexData, file_spanned: &Spanned<File>, leniency: LeniencyLevel) -> Vec<Error> {
     let (file, file_span) = file_spanned;
 
     let file_span_with_source = (file.id.clone(), file_span.clone()).into();
@@ -930,10 +966,19 @@ pub fn validate(lex_data: &LexData, file_spanned: &Spanned<File>) -> Vec<Error> 
     let (_, second_pass_errors) =
         visit::<LabelOffsetBoundsAnalysis, _, _>(&symbol_table, file, &file_span_with_source);
 
+    let strict_errors =
+        if let LeniencyLevel::Strict = leniency {
+            let (_, errors) = visit::<StrictLabelAnalysis, _, _>((), file, &file_span_with_source);
+            errors
+        } else {
+            vec![]
+        };
+
     concat([
         errors_from_lex_data,
         first_pass_errors,
         second_pass_errors,
+        strict_errors
     ])
 }
 

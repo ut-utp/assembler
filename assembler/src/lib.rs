@@ -88,15 +88,22 @@ impl ariadne::Span for SpanWithSource {
 /// For example, labels officially cannot exceed 20 characters.
 /// To enforce these rules, use [`LeniencyLevel::Strict`].
 ///
-/// [`LeniencyLevel::Lenient`] allows the following:
-/// (TODO)
+/// [`LeniencyLevel::Strict`] enforces the following:
+/// - Labels cannot contain underscores
+/// - Labels cannot exceed 20 characters in length
+/// - Labels must be defined on the same line as an instruction, not separately on a previous line
+/// - Qualified number literals cannot be prefixed with `0` (i.e., `0x3000` is not allowed, only `x3000`)
+/// - Operands must be separated with commas (`,`), not just whitespace.
+/// - Condition codes for BR instructions *must* be listed in the following order: `n`, `z`, then `p`.
+// NOTE TO DEVS (THIS SHOULD NOT BE IN THE DOCS):
+// When updating this list, remember to update the command line app's list.
 #[derive(Copy, Clone)]
 pub enum LeniencyLevel {
-    /// Indicates that all convenience features (described under [`LeniencyLevel`]) are to be allowed.
+    /// Indicates that all convenience features are to be allowed.
     Lenient,
 
     /// Indicates that all official rules of the LC-3 assembly language
-    /// are to be followed, as described in *Introduction to Computing Systems: from Bits & Gates to C/C++ & Beyond*,
+    /// are to be followed, as described in *Introduction to Computing Systems: from Bits & Gates to C/C++ & Beyond (3rd ed.)*,
     /// by Patt and Patel.
     Strict
 }
@@ -213,7 +220,7 @@ pub fn parse_and_analyze_file(input: &PathBuf, leniency: LeniencyLevel) -> Resul
 pub fn parse_and_analyze(id: &SourceId, src: &String, leniency: LeniencyLevel) -> Result<parse::File, error::Error> {
     let (tokens, lex_data) = lex::lex(src, leniency).map_err(|es| error::into_multiple(id.clone(), es))?;
     let file_spanned = parse::parse(id.clone(), src, tokens, leniency).map_err(|es| error::into_multiple(id.clone(), es))?;
-    let errors = analyze::validate(&lex_data, &file_spanned);
+    let errors = analyze::validate(&lex_data, &file_spanned, leniency);
     if !errors.is_empty() {
         return Err(errors.into());
     }

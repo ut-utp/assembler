@@ -201,6 +201,13 @@ pub enum SingleError {
         /// The specific reason the instruction can't be assembled.
         reason: InvalidReferenceReason
     },
+    /// A label does not follow the strict LC-3 requirements.
+    StrictlyInvalidLabel {
+        /// The label.
+        label: String,
+        /// The specific reason the label doesn't meet strict LC-3 requirements.
+        reason: StrictlyInvalidLabelReason
+    },
     /// Two program blocks span at least one common memory location.
     ProgramBlocksOverlap { placement1: ProgramBlockPlacement, placement2: ProgramBlockPlacement },
     /// The lexer produced no tokens; probably indicates no content in the source file.
@@ -209,6 +216,17 @@ pub enum SingleError {
     NoOrig,
     /// The lexer produced no token for `.END`; this will likely result in no valid program blocks being parsed.
     NoEnd,
+}
+
+/// A reason that a label doesn't meet strict LC-3 requirements.
+#[derive(Debug)]
+pub enum StrictlyInvalidLabelReason {
+    /// The label contains underscores.
+    ContainsUnderscores,
+    /// The label is over 20 characters.
+    TooLong,
+    /// The label is over 20 characters and contains underscores.
+    ContainsUnderscoresAndTooLong,
 }
 
 /// A reason that an instruction cannot be assembled due to a label reference operand.
@@ -287,6 +305,16 @@ impl SingleError {
             Link => "unexpected link error".to_string(),
             Layer => "unexpected layering error".to_string(),
             TooManyInputs => "too many input files provided".to_string(),
+            StrictlyInvalidLabel { label, reason } => {
+                use StrictlyInvalidLabelReason::*;
+                let reason_str = 
+                    match reason {
+                        ContainsUnderscores => "contains underscores",
+                        TooLong => "over 20 characters long",
+                        ContainsUnderscoresAndTooLong => "contains underscores and over 20 characters long"
+                    };
+                format!("label {} invalid: {}", label, reason_str)
+            }
         }
     }
 }

@@ -457,7 +457,7 @@ fn tokens(leniency: LeniencyLevel) -> impl Parser<char, Vec<Spanned<Token>>, Err
 
     let label = text::ident() // C-style identifier. Follows all LC-3 label rules but allows arbitrary length and underscores.
         .then_ignore(terminator.rewind())
-        .map(Token::Label); // TODO: validate length, underscores in strict mode
+        .map(Token::Label);
 
     let token = choice((
         opcode,

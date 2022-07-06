@@ -16,9 +16,7 @@ const MEM_DUMP_FILE_EXTENSION: &'static str = "mem";
 
 #[derive(Parser)]
 #[clap(author, version, about,
-    long_about = "Analyzes, assembles, and/or links LC-3 assembly and object files. \
-                  Each given assembly file is assembled to a single object file, \
-                  then all assembled or given object files are linked into a single executable image \
+    long_about = "Analyzes, and/or assembles an LC-3 assembly file into an executable image
                   of LC-3 machine code."
       )]
 struct Args {
@@ -30,7 +28,17 @@ struct Args {
     ///
     /// By default, the assembler is lenient about restrictions such as label length.
     /// This option enforces restrictions specified in Patt and Patel's Introduction to Computing Systems, 3rd edition.
-    #[clap(long, short)]
+    ///
+    /// These include:
+    /// - Labels cannot contain underscores
+    /// - Labels cannot exceed 20 characters in length
+    /// - Labels must be defined on the same line as an instruction, not separately on a previous line
+    /// - Qualified number literals cannot be prefixed with `0` (i.e., `0x3000` is not allowed, only `x3000`)
+    /// - Operands must be separated with commas (`,`), not just whitespace.
+    /// - Condition codes for BR instructions *must* be listed in the following order: `n`, `z`, then `p`.
+    // NOTE TO DEVS (THIS SHOULD NOT BE IN THE DOCS):
+    // When updating this list, remember to update the library's list in the docs for LeniencyLevel.
+    #[clap(long, short, verbatim_doc_comment)]
     strict: bool,
 
     /// Check the correctness of the program without assembling

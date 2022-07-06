@@ -85,6 +85,12 @@ mod single_instruction {
         begins_with_trap:   "INIT  ADD R0 R0 R0" => 0x1000,
     }
 
+    tests! { labels_strict (Strict)
+        minimal:            "A     ADD R0, R0, R0" => 0x1000,
+        begins_with_opcode: "ADDER ADD R0, R0, R0" => 0x1000,
+        begins_with_trap:   "INIT  ADD R0, R0, R0" => 0x1000,
+    }
+
     tests! { add
         minimal:     "ADD R0 R0 R0"  => 0x1000,
         r1_2_3:      "ADD R1 R2 R3"  => 0x1283,
@@ -353,7 +359,7 @@ fn assert_mem(mem: &MemoryDump, location: usize, expected: Word) {
 
 mod error {
     use assert_matches::assert_matches;
-    use lc3_assembler::error::{InvalidReferenceReason, OperandType, SingleError};
+    use lc3_assembler::error::{StrictlyInvalidLabelReason, InvalidReferenceReason, OperandType, SingleError};
     use super::*;
 
     macro_rules! single_error_tests {
@@ -506,8 +512,7 @@ mod error {
              .BLKW 255\n\
              LEA R0, LABEL\n\
              .END"
-            =>
-        SingleError::InvalidLabelReference {
+            => SingleError::InvalidLabelReference {
                 reason: InvalidReferenceReason::TooDistant {
                     est_ref_pos: 0x3101,
                     est_label_pos: 0x3001,
@@ -517,6 +522,30 @@ mod error {
                 },
                 ..
             },
+        label_contains_underscores (Strict):
+            ".ORIG x3000\n\
+             OH_NO HALT\n\
+             .END"
+            => SingleError::StrictlyInvalidLabel {
+                reason: StrictlyInvalidLabelReason::ContainsUnderscores,
+                ..
+            },
+        label_too_long (Strict):
+            ".ORIG x3000\n\
+             REALLYLONGLABEL0123456789 HALT\n\
+             .END"
+            => SingleError::StrictlyInvalidLabel {
+                reason: StrictlyInvalidLabelReason::TooLong,
+                ..
+            },
+        label_too_long_and_contains_underscores (Strict):
+            ".ORIG x3000\n\
+             REALLYLONGLABEL_0123456789 HALT\n\
+             .END"
+            => SingleError::StrictlyInvalidLabel {
+                reason: StrictlyInvalidLabelReason::ContainsUnderscoresAndTooLong,
+                ..
+            }
     }
 
     macro_rules! contains_error {
