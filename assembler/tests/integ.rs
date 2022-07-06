@@ -80,6 +80,7 @@ mod single_instruction {
 
     tests! { labels
         minimal:            "A     ADD R0 R0 R0" => 0x1000,
+        on_separate_line:   "A\n   ADD R0 R0 R0" => 0x1000,
         begins_with_opcode: "ADDER ADD R0 R0 R0" => 0x1000,
         begins_with_trap:   "INIT  ADD R0 R0 R0" => 0x1000,
     }
@@ -350,7 +351,6 @@ fn assert_mem(mem: &MemoryDump, location: usize, expected: Word) {
 }
 
 
-
 mod error {
     use assert_matches::assert_matches;
     use lc3_assembler::error::{InvalidReferenceReason, OperandType, SingleError};
@@ -413,6 +413,12 @@ mod error {
             ".ORIG x3000\n\
              LOOP ADD R0, R0, R0\n\
              BRpnz LOOP\n\
+             .END"
+            => SingleError::BadInstruction, // Doesn't have to be this error, specifically.
+        strict_label_on_separate_line (Strict):
+            ".ORIG x3000\n\
+             LABEL
+             ADD R0, R0, R0\n\
              .END"
             => SingleError::BadInstruction, // Doesn't have to be this error, specifically.
         bad_label:

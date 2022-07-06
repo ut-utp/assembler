@@ -30,7 +30,6 @@ struct Args {
     ///
     /// By default, the assembler is lenient about restrictions such as label length.
     /// This option enforces restrictions specified in Patt and Patel's Introduction to Computing Systems, 3rd edition.
-    // TODO: provide full list of restrictions
     #[clap(long, short)]
     strict: bool,
 

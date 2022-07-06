@@ -260,8 +260,16 @@ fn instruction(leniency: LeniencyLevel) -> impl Parser<Token, WithErrData<Instru
             .then(just(Token::Newline).ignored().or(end()))
             .ignored();
 
-    label.or_not()
-        .then_ignore(comments_and_newlines().or_not())
+    let label_and_separator: Box<dyn Parser<Token, Option<WithErrData<String>>, Error=Simple<Token>>> =
+        match leniency {
+            LeniencyLevel::Lenient =>
+                Box::new(label.or_not()
+                    .then_ignore(comments_and_newlines().or_not())),
+            LeniencyLevel::Strict =>
+                Box::new(label.or_not()),
+        };
+
+    label_and_separator
         .then(opcode)
         .then(operands(leniency))
         .then_ignore(terminator.rewind())
