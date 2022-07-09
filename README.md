@@ -7,3 +7,44 @@
 Where the _fancy_ tools live.
 
 🚧 🚧 This is very much not stable yet! 🚧 🚧
+
+### Assembler
+
+An LC-3 assembler designed with a focus on helpful feedback.
+
+See [`./assembler/README.md`](assembler/README.md).
+
+### Language Server
+
+A server which uses the Language Server Protocol (LSP) to provide
+tools for analyzing and assembling LC-3 assembly code to text editors
+supporting LSP.
+
+
+
+### Language Client
+
+A Visual Studio Code (VSCode) extension and client for the Language Server.
+
+#### Prerequisites
+
+- [Install `pnpm`.](https://pnpm.io/installation#using-npm)
+- [Install `cargo`.](https://rustup.rs/)
+
+#### Building
+
+Starting in the top level of the repo:
+
+```sh
+pnpm i
+```
+
+Then build the language server:
+```sh
+cd language_server
+cargo build
+```
+
+#### Testing
+
+Open the repo folder in VSCode and launch using "Start Debugging" (<kbd>F5</kbd>).

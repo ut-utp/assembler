@@ -68,6 +68,11 @@ pub struct SpanWithSource {
     span: Span,
 }
 
+impl SpanWithSource {
+    pub fn start(&self) -> usize { self.span.start }
+    pub fn end(&self) -> usize { self.span.end }
+}
+
 impl From<(SourceId, Span)> for SpanWithSource {
     fn from((id, span): (SourceId, Span)) -> Self {
         Self { id, span }
@@ -78,8 +83,8 @@ impl ariadne::Span for SpanWithSource {
     type SourceId = SourceId;
 
     fn source(&self) -> &Self::SourceId { &self.id }
-    fn start(&self) -> usize { self.span.start }
-    fn end(&self) -> usize { self.span.end }
+    fn start(&self) -> usize { self.start() }
+    fn end(&self) -> usize { self.end() }
 }
 
 /// The level of leniency to be used when parsing and identifying errors.

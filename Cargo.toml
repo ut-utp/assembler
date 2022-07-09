@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "assembler",
+    "language_server",
 ]
 
 [patch.crates-io]

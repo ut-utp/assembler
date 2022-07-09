@@ -121,6 +121,7 @@ impl Error {
                 },
         }
     }
+
 }
 
 pub(crate) type RoughAddr = i32;
@@ -253,7 +254,11 @@ impl SingleError {
         ProgramBlocksOverlap { placement1, placement2 }
     }
 
-    fn message(&self) -> String {
+    /// Produce a short error message for this error.
+    ///
+    /// The messages are designed to be as short as possible while
+    /// still including all data present in the error variant.
+    pub fn message(&self) -> String {
         match self {
             BadProgramBlock => String::from("invalid program block"),
             BadInstruction => String::from("invalid instruction"),

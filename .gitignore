@@ -6,6 +6,10 @@
 *.mem
 log_files/
 
+### Node.js Language Client packages and builds
+node_modules
+/language_client/out/
+
 
 ### Sublime Text ###
 *.sublime-project

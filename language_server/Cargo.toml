@@ -1,0 +1,39 @@
+[package]
+name = "lc3-language-server"
+version = "0.1.0"
+authors = ["UT UTP <ut.utp.group@gmail.com>"]
+edition = "2021"
+rust-version = "1.56.1"
+
+workspace = ".."
+
+description = "LC-3 language services for LSP editors."
+homepage = "https://ut-utp.github.io"
+repository = "http://github.com/ut-utp/assembler"
+
+readme = "README.md"
+
+keywords = ["lc-3", "language server", "tooling", "utp", "lsp"]
+categories = ["tooling"]
+
+license = "MPL-2.0"
+
+default-run = "lc3_lang_serv"
+
+[[bin]]
+name = "lc3_lang_serv"
+path = "bin/main.rs"
+
+[badges]
+github-actions = { repository = "ut-utp/assembler", workflow = "assembler" }
+codecov = { repository = "ut-utp/assembler", branch = "master", service = "github" }
+
+is-it-maintained-issue-resolution = { repository = "ut-utp/assembler" }
+is-it-maintained-open-issues = { repository = "ut-utp/assembler" }
+maintenance = { status = "actively-developed" }
+
+[dependencies]
+lc3-assembler = { version = "0.1.0", path = "../assembler" }
+tower-lsp = "0.17.0"
+tokio = { version = "1.19.2", features = ["full"] }
+ropey = "1.5.0"
