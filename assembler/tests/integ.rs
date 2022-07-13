@@ -338,7 +338,7 @@ fn multiple_output_test(input: &str, expected: &[Word], leniency: LeniencyLevel)
 
 fn test(input: &str, orig: usize, expected_mem: &[Word], leniency: LeniencyLevel) {
     let src = input.to_string();
-    let mem = assemble(&"<test>".to_string(), &src, leniency, true).unwrap();
+    let mem = assemble(None, src, leniency, true).unwrap();
 
     for i in 0..orig {
         assert_mem(&mem, i, 0x0000);
@@ -378,7 +378,7 @@ mod error {
                         let src = $source.to_string();
                         let mut leniency = LeniencyLevel::Lenient;
                         $(leniency = LeniencyLevel::$leniency;)?
-                        match parse_and_analyze(&"<test>".to_string(), &src, leniency) {
+                        match parse_and_analyze(None, src, leniency) {
                             Err(error) => {
                                 match error {
                                     Error::Multiple(errors) => {
@@ -577,7 +577,7 @@ mod error {
                     #[test]
                     fn $test_name() {
                         let src = $source.to_string();
-                        match parse_and_analyze(&"<test>".to_string(), &src, LeniencyLevel::Lenient) {
+                        match parse_and_analyze(None, src, LeniencyLevel::Lenient) {
                             Err(error) => {
                                 match error {
                                     Error::Multiple(errors) => {

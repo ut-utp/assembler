@@ -19,7 +19,7 @@
             },
             "env": {
                 "SERVER_PATH": "${workspaceRoot}/target/debug/lc3_lang_serv"
-            }
+            },
         },
         // {
         //   "type": "node",

@@ -22,7 +22,7 @@ pub enum Error {
     Multiple(Vec<Error>),
 }
 
-pub(crate) fn into_multiple<E>(id: SourceId, es: Vec<E>) -> Error
+pub fn into_multiple<E>(id: SourceId, es: Vec<E>) -> Error
     where (SourceId, E): Into<Error>
 {
     let errors =

@@ -515,9 +515,10 @@ impl Visit for ObjectPlacementAnalysis {
 }
 
 
-struct LocationCounter {
-    value: RoughAddr,
-    state: LocationCounterState,
+/// An estimated location in LC-3 memory.
+pub struct LocationCounter {
+    pub value: RoughAddr,
+    pub state: LocationCounterState,
 }
 
 impl LocationCounter {
@@ -527,11 +528,14 @@ impl LocationCounter {
             state: LocationCounterState::Valid,
         }
     }
-
 }
 
+/// The state of a [`LocationCounter`]'s estimate.
+/// 
+/// Provides information about whether the counter is accurate,
+/// or just an estimate, and if it's an estimate, then why that is.
 #[derive(Debug)]
-enum LocationCounterState {
+pub enum LocationCounterState {
     Valid,
     InvalidOrig,
     InvalidInstruction,
@@ -551,7 +555,8 @@ impl LocationCounterState {
     }
 }
 
-fn visit<'a, V, D, O>(data: D, file: &File, span: &SpanWithSource) -> (O, Vec<Error>)
+/// Construct a `Visit`, traverse the syntax tree with it, and return its result.
+pub fn visit<'a, V, D, O>(data: D, file: &File, span: &SpanWithSource) -> (O, Vec<Error>)
     where V: Visit<Data=D, Output=O>
 {
     let mut v = V::new(data);
@@ -683,11 +688,14 @@ fn visit_operand(v: &mut impl Visit, id: SourceId, operand: &WithErrData<Operand
 }
 
 /// A trait for syntax tree visitors, to be used by [`visit`].
+/// 
+/// The "enter" methods are called as each syntax element is visited in a depth-first traversal.
+/// The "exit" method for an element is called once all of its children are visited.
 ///
-/// This trait is really just a way to separate the logic of different
+/// This trait and [`visit`] provide a way to separate the logic of different
 /// types of analysis. Analysis that can be done in one independent
 /// pass over the tree can be encapsulated in its own `Visit` implementation.
-trait Visit {
+pub trait Visit {
     type Data;
     fn new(data: Self::Data) -> Self;
 

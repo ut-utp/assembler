@@ -65,10 +65,16 @@ pub type SourceId = String;
 #[derive(Debug, Clone)]
 pub struct SpanWithSource {
     id: SourceId,
-    span: Span,
+    pub span: Span,
 }
 
 impl SpanWithSource {
+    pub fn with_dummy_source(span: Span) -> Self {
+        SpanWithSource { 
+            id: dummy_id(),
+            span
+        }
+    }
     pub fn start(&self) -> usize { self.span.start }
     pub fn end(&self) -> usize { self.span.end }
 }
@@ -141,11 +147,15 @@ pub fn read(input: &PathBuf) -> Result<String, std::io::Error> {
 ///
 /// If working with source code that isn't from a file,
 /// you may use the id of an arbitrary path (even `""`) for
-/// functions requiring a [`SourceId`].
+/// functions requiring a [`SourceId`], or use [`dummy_id`].
 pub fn id(input: &PathBuf) -> SourceId {
     input.to_string_lossy().to_string()
 }
 
+/// Get a [`SourceId`] representing no source file.
+pub fn dummy_id() -> SourceId {
+    id(&PathBuf::from(""))
+}
 
 /// Check whether the given file contains valid LC-3 assembly code.
 ///
@@ -179,10 +189,11 @@ pub fn id(input: &PathBuf) -> SourceId {
 /// let first_error = error.get_first_single_error().unwrap();
 /// assert_matches!(first_error, error::SingleError::BadOperand);
 /// ```
-pub fn parse_and_analyze_file(input: &PathBuf, leniency: LeniencyLevel) -> Result<parse::File, error::Error> {
-    let id = id(&input);
-    let src = read(input).map_err(|e| (id.clone(), e))?;
-    parse_and_analyze(&id, &src, leniency)
+pub fn parse_and_analyze_file(input: &PathBuf, leniency: LeniencyLevel) -> Result<Spanned<parse::File>, error::Error> {
+    Assembly::<&PathBuf>::new(input, leniency)
+        .read()?
+        .parse_and_analyze()
+        .map(|a| a.file())
 }
 
 
@@ -204,7 +215,7 @@ pub fn parse_and_analyze_file(input: &PathBuf, leniency: LeniencyLevel) -> Resul
 /// # use lc3_assembler::*;
 /// let src = include_str!("../docs/tests/add.asm").to_string();
 /// let src_id = id(&std::path::PathBuf::from("../docs/tests/add.asm"));
-/// let result = parse_and_analyze(&src_id, &src, LeniencyLevel::Lenient);
+/// let result = parse_and_analyze(Some(src_id), src, LeniencyLevel::Lenient);
 /// assert!(result.is_ok());
 /// ```
 ///
@@ -218,19 +229,14 @@ pub fn parse_and_analyze_file(input: &PathBuf, leniency: LeniencyLevel) -> Resul
 /// use assert_matches::assert_matches;
 /// let src = include_str!("../docs/tests/bad_operand.asm").to_string();
 /// let src_id = id(&std::path::PathBuf::from("../docs/tests/bad_operand.asm"));
-/// let error = parse_and_analyze(&src_id, &src, LeniencyLevel::Lenient).unwrap_err();
+/// let error = parse_and_analyze(Some(src_id), src, LeniencyLevel::Lenient).unwrap_err();
 /// let first_error = error.get_first_single_error().unwrap();
 /// assert_matches!(first_error, error::SingleError::BadOperand);
 /// ```
-pub fn parse_and_analyze(id: &SourceId, src: &String, leniency: LeniencyLevel) -> Result<parse::File, error::Error> {
-    let (tokens, lex_data) = lex::lex(src, leniency).map_err(|es| error::into_multiple(id.clone(), es))?;
-    let file_spanned = parse::parse(id.clone(), src, tokens, leniency).map_err(|es| error::into_multiple(id.clone(), es))?;
-    let errors = analyze::validate(&lex_data, &file_spanned, leniency);
-    if !errors.is_empty() {
-        return Err(errors.into());
-    }
-    let (file, _) = file_spanned;
-    Ok(file)
+pub fn parse_and_analyze(id: Option<SourceId>, source: String, leniency: LeniencyLevel) -> Result<Spanned<parse::File>, error::Error> {
+    Assembly::<String>::new(id, source, leniency)
+        .parse_and_analyze()
+        .map(|a| a.file())
 }
 
 
@@ -257,9 +263,9 @@ pub fn parse_and_analyze(id: &SourceId, src: &String, leniency: LeniencyLevel) -
 /// # }
 /// ```
 pub fn assemble_file(input: &PathBuf, leniency: LeniencyLevel, no_os: bool) -> Result<lc3_isa::util::MemoryDump, error::Error> {
-    let id = id(&input);
-    let src = read(input).map_err(|e| (id.clone(), e))?;
-    assemble(&id, &src, leniency, no_os)
+    Assembly::<&PathBuf>::new(input, leniency)
+        .read()?
+        .assemble(!no_os)
 }
 
 
@@ -283,15 +289,179 @@ pub fn assemble_file(input: &PathBuf, leniency: LeniencyLevel, no_os: bool) -> R
 /// # fn main() -> Result<(), error::Error> {
 /// let src = include_str!("../docs/tests/add.asm").to_string();
 /// let src_id = id(&std::path::PathBuf::from("../docs/tests/add.asm"));
-/// let mem = assemble(&src_id, &src, LeniencyLevel::Lenient, false)?;
+/// let mem = assemble(Some(src_id), src, LeniencyLevel::Lenient, false)?;
 /// assert_eq!(mem[0x3000], 0x1000);
 /// # Ok(())
 /// # }
 /// ```
-pub fn assemble(id: &SourceId, src: &String, leniency: LeniencyLevel, no_os: bool) -> Result<lc3_isa::util::MemoryDump, error::Error> {
-    let file = parse_and_analyze(id, src, leniency)?;
-    let assemble::Object { symbol_table, blocks } = assemble::assemble(file).map_err(|_| (id.clone(), error::SingleError::Assemble))?;
-    let blocks = link::link_object_blocks(&symbol_table, blocks).map_err(|e| (id.clone(), e))?;
-    let mem = layer::layer(blocks, !no_os).map_err(|e| (id.clone(), e))?;
-    Ok(mem)
+pub fn assemble(id: Option<SourceId>, source: String, leniency: LeniencyLevel, no_os: bool) -> Result<lc3_isa::util::MemoryDump, error::Error> {
+    Assembly::<String>::new(id, source, leniency)
+        .assemble(!no_os)
+}
+
+
+pub struct Assembly<S> {
+    state: S,
+    id: SourceId,
+    leniency: LeniencyLevel,
+}
+
+impl<S> Assembly<S> {
+    fn map_state<F, T>(self, f: F) -> Assembly<T>
+        where F: FnOnce(S) -> T
+    {
+        Assembly {
+            state: f(self.state),
+            id: self.id,
+            leniency: self.leniency,
+        }
+    }
+}
+
+impl<'a> Assembly<&'a PathBuf> {
+    pub fn new(path: &PathBuf, leniency: LeniencyLevel) -> Assembly<&PathBuf> {
+        let id = id(path);
+        Assembly {
+            state: path,
+            id,
+            leniency,
+        }
+    }
+
+    pub fn read(self) -> Result<Assembly<String>, error::Error> {
+        match read(self.state) {
+            Ok(source) => Ok(self.map_state(|_| source)),
+            Err(e) => Err((self.id, e).into())
+        }
+    }
+}
+
+impl Assembly<String> {
+    pub fn new(id: Option<SourceId>, source: String, leniency: LeniencyLevel) -> Assembly<String> {
+        let id = id.unwrap_or(dummy_id());
+        Assembly {
+            state: source,
+            id,
+            leniency,
+        }
+    }
+
+    pub fn assemble(self, with_os: bool) -> Result<lc3_isa::util::MemoryDump, error::Error> {
+        self.parse_and_analyze()?
+            .assemble()?
+            .link()?
+            .layer(with_os)
+    }
+
+    pub fn parse_and_analyze(self) -> Result<Assembly<Validated>, error::Error> {
+        self.lex()?
+            .parse()?
+            .validate()
+            .map_err(|(_, errs)| error::Error::Multiple(errs))
+    }
+
+    pub fn lex(self) -> Result<Assembly<Lexed>, error::Error> {
+        match lex::lex(&self.state, self.leniency) {
+            Ok((tokens, lex_data)) =>
+                Ok(self.map_state(|source|
+                    Lexed {
+                        source,
+                        tokens,
+                        lex_data
+                    })),
+            Err(es) => Err(error::into_multiple(self.id.clone(), es)),
+        }
+    }
+}
+
+pub struct Lexed {
+    source: String,
+    tokens: Vec<Spanned<lex::Token>>,
+    lex_data: lex::LexData,
+}
+impl Assembly<Lexed> {
+    pub fn parse(self) -> Result<Assembly<Parsed>, error::Error> {
+        match parse::parse(self.id.clone(), &self.state.source, self.state.tokens, self.leniency) {
+            Ok(file) =>
+                Ok(Assembly {
+                    state: Parsed {
+                        lex_data: self.state.lex_data,
+                        file
+                    },
+                    id: self.id,
+                    leniency: self.leniency
+                }),
+            Err(es) => Err(error::into_multiple(self.id.clone(), es)),
+        }
+    }
+}
+
+pub struct Parsed {
+    lex_data: lex::LexData,
+    file: Spanned<parse::File>,
+}
+impl Parsed {
+    pub fn file(self) -> Spanned<parse::File> {
+        self.file
+    }
+}
+impl Assembly<Parsed> {
+    pub fn validate(self) -> Result<Assembly<Validated>,
+                                    (Parsed, Vec<error::Error>)> {
+        let errors = analyze::validate(&self.state.lex_data, &self.state.file, self.leniency);
+        if errors.is_empty() {
+            Ok(self.map_state(|p| Validated { file: p.file }))
+        } else {
+            Err((self.state, errors))
+        }
+    }
+
+    pub fn file_and_errors(self) -> (Spanned<parse::File>, error::Error) {
+        let errors = analyze::validate(&self.state.lex_data, &self.state.file, self.leniency);
+        (self.state.file, error::Error::Multiple(errors))
+    }
+}
+
+pub struct Validated {
+    file: Spanned<parse::File>,
+}
+impl Assembly<Validated> {
+    pub fn assemble(self) -> Result<Assembly<assemble::Object>, error::Error> {
+        let (f, _) = self.state.file;
+        match assemble::assemble(f) {
+            Ok(object) =>
+                Ok(Assembly {
+                    state: object,
+                    id: self.id,
+                    leniency: self.leniency
+                }),
+            Err(_) => Err((self.id.clone(), error::SingleError::Assemble).into())
+        }
+    }
+
+    pub fn file(self) -> Spanned<parse::File> {
+        self.state.file
+    }
+}
+
+impl Assembly<assemble::Object> {
+    pub fn link(self) -> Result<Assembly<Vec<link::Block>>, error::Error> {
+        let assemble::Object { symbol_table, blocks } = self.state;
+        match link::link_object_blocks(&symbol_table, blocks) {
+            Ok(blocks) =>
+                Ok(Assembly {
+                    state: blocks,
+                    id: self.id,
+                    leniency: self.leniency,
+                }),
+            Err(_) => Err((self.id.clone(), error::SingleError::Link).into())
+        }
+    }
+}
+
+impl Assembly<Vec<link::Block>> {
+    pub fn layer(self, with_os: bool) -> Result<lc3_isa::util::MemoryDump, error::Error> {
+        layer::layer(self.state, with_os)
+            .map_err(|_| (self.id.clone(), error::SingleError::Layer).into())
+    }
 }

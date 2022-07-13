@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::vec;
 
-// use dashmap::DashMap;
+use dashmap::DashMap;
 // use nrs_language_server::chumsky::{parse, type_inference, Func, ImCompleteSemanticToken, Spanned};
 // use nrs_language_server::completion::completion;
 // use nrs_language_server::jump_definition::{get_definition, get_definition_of_expr};
 // use nrs_language_server::reference::get_reference;
-// use nrs_language_server::semantic_token::{self, semantic_token_from_ast, LEGEND_TYPE};
+use lc3_language_server::semantic_token;
 use ropey::Rope;
 // use serde::{Deserialize, Serialize};
 // use serde_json::Value;
@@ -14,13 +15,15 @@ use tower_lsp::jsonrpc::{ErrorCode, Result};
 use tower_lsp::lsp_types::notification::Notification;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, lsp_types, LspService, Server};
-use lc3_assembler::{id, LeniencyLevel, parse_and_analyze};
+use lc3_assembler::{Assembly, LeniencyLevel, parse_and_analyze, Parsed, Validated};
 use lc3_assembler::error::Error;
-use lc3_assembler::parse::File;
+use crate::request::{GotoDeclarationParams, GotoDeclarationResponse, GotoImplementationParams, GotoImplementationResponse, GotoTypeDefinitionParams, GotoTypeDefinitionResponse};
 
 #[derive(Debug)]
 struct Backend {
     client: Client,
+    document_map: DashMap<String, Rope>,
+    semantic_token_map: DashMap<String, Vec<Spanned<semantic_token::SemanticToken>>>,
 }
 
 #[tower_lsp::async_trait]
@@ -35,11 +38,80 @@ impl LanguageServer for Backend {
                 // TODO: Completion? (completion_provider)
                 // TODO: Commands? (execute_command_provider)
                 // TODO: Workspaces, linking (workspace)
-                // TODO: Semantic highlighting (semantic_tokens_provider)
-                //       ^ (could also do client-side syntax highlighting)
+                semantic_tokens_provider: Some(
+                    SemanticTokensServerCapabilities::SemanticTokensRegistrationOptions(
+                        SemanticTokensRegistrationOptions {
+                            text_document_registration_options: {
+                                TextDocumentRegistrationOptions {
+                                    document_selector: Some(vec![DocumentFilter {
+                                        language: Some("lc3".to_string()),
+                                        scheme: Some("file".to_string()),
+                                        pattern: None,
+                                    }]),
+                                }
+                            },
+                            semantic_tokens_options: SemanticTokensOptions {
+                                work_done_progress_options: WorkDoneProgressOptions::default(),
+                                legend: semantic_token::legend(),
+                                range: Some(true),
+                                full: Some(SemanticTokensFullOptions::Bool(true)),
+                            },
+                            static_registration_options: StaticRegistrationOptions::default(),
+                        },
+                    ),
+                ),
                 // TODO: definition_provider, references_provider, rename_provider (at least for labels)
                 ..ServerCapabilities::default()
             },
+        })
+    }
+
+    async fn semantic_tokens_full(
+        &self,
+        params: SemanticTokensParams
+    ) -> Result<Option<SemanticTokensResult>> {
+        let uri = params.text_document.uri.to_string();
+        self.client
+            .log_message(MessageType::LOG, "semantic_tokens_full")
+            .await;
+        let semantic_tokens = || -> Option<Vec<SemanticToken>> {
+            let simple_tokens = self.semantic_token_map.get(&uri)?;
+            let rope = self.document_map.get(&uri)?;
+            semantic_token::semantic_tokens(&simple_tokens, &rope)
+        }();
+        Ok(if let Some(semantic_token) = semantic_tokens {
+            Some(SemanticTokensResult::Tokens(SemanticTokens {
+                result_id: None,
+                data: semantic_token,
+            }))
+        } else {
+            None
+        })
+    }
+
+    async fn semantic_tokens_range(
+        &self,
+        params: SemanticTokensRangeParams
+    ) -> Result<Option<SemanticTokensRangeResult>> {
+        let uri = params.text_document.uri.to_string();
+        self.client
+            .log_message(MessageType::LOG, "semantic_tokens_full")
+            .await;
+        let semantic_tokens = || -> Option<Vec<SemanticToken>> {
+            let simple_tokens = self.semantic_token_map.get(&uri)?;
+            let rope = self.document_map.get(&uri)?;
+            semantic_token::semantic_tokens(&simple_tokens, &rope)
+        }();
+        self.client
+            .log_message(MessageType::INFO, &format!("{:?}", semantic_tokens))
+            .await;
+        Ok(if let Some(semantic_token) = semantic_tokens {
+            Some(SemanticTokensRangeResult::Tokens(SemanticTokens {
+                result_id: None,
+                data: semantic_token,
+            }))
+        } else {
+            None
         })
     }
 
@@ -138,26 +210,49 @@ fn diagnostics(error: &Error, rope: &Rope) -> Vec<Diagnostic> {
     }
 }
 
+type Span = std::ops::Range<usize>;
+type Spanned<T> = (T, Span);
+
+fn parse(id: lc3_assembler::SourceId, src: String) -> std::result::Result<(Spanned<lc3_assembler::parse::File>, Error), Error> {
+    Ok(lc3_assembler::Assembly::<String>::new(Some(id), src, LeniencyLevel::Lenient)
+        .lex()?
+        .parse()?
+        .file_and_errors())
+}
+
 impl Backend {
     async fn on_change(&self, params: TextDocumentItem) {
         let rope = Rope::from_str(&params.text);
-        let path = &params.uri.to_file_path().unwrap_or(PathBuf::from(""));
-        let parse_result = parse_and_analyze(&id(&path), &params.text, LeniencyLevel::Lenient);
+        self.document_map.insert(params.uri.to_string(), rope.clone());
+        let id = params.uri.to_file_path()
+            .map(|p| lc3_assembler::id(&p))
+            .unwrap_or(lc3_assembler::dummy_id());
 
-        let diagnostics =
-            match parse_result {
-                Ok(_) => vec![],
-                Err(e) => diagnostics(&e, &rope),
+
+        let (semantic_tokens, diagnostics) =
+            match parse(id, params.text) {
+                Ok((file, e)) => {
+                    let semantic_tokens = semantic_token::simple_semantic_tokens(&file);
+                    (semantic_tokens, diagnostics(&e, &rope))
+                },
+                Err(e) => (vec![], diagnostics(&e, &rope)),
             };
 
          self.client
             .publish_diagnostics(params.uri.clone(), diagnostics, Some(params.version))
             .await;
+
+        self.client
+            .log_message(MessageType::INFO, &format!("{:?}", semantic_tokens))
+            .await;
+        self.semantic_token_map.insert(params.uri.to_string(), semantic_tokens);
     }
 }
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
@@ -165,6 +260,8 @@ async fn main() {
         LspService::build(|client|
             Backend {
                 client,
+                document_map: Default::default(),
+                semantic_token_map: Default::default(),
             })
         .finish();
     Server::new(stdin, stdout, socket).serve(service).await;
