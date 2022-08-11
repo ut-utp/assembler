@@ -125,6 +125,9 @@ pub fn sources(iter: impl IntoIterator<Item=PathBuf>) -> Result<impl ariadne::Ca
      Ok(ariadne::sources(sources))
 }
 
+pub fn sources_raw<'a>(iter: impl IntoIterator<Item = (SourceId, &'a str)> + 'a) -> Result<(impl ariadne::Cache<SourceId> + 'a), ()> {
+    Ok(ariadne::sources(iter))
+}
 
 /// Read all of the given file.
 pub fn read(input: &PathBuf) -> Result<String, std::io::Error> {
@@ -217,7 +220,7 @@ pub fn parse_and_analyze_file(input: &PathBuf, leniency: LeniencyLevel) -> Resul
 /// let first_error = error.get_first_single_error().unwrap();
 /// assert_matches!(first_error, error::SingleError::BadOperand);
 /// ```
-pub fn parse_and_analyze(id: &SourceId, src: &String, leniency: LeniencyLevel) -> Result<parse::File, error::Error> {
+pub fn parse_and_analyze(id: &SourceId, src: &str, leniency: LeniencyLevel) -> Result<parse::File, error::Error> {
     let (tokens, lex_data) = lex::lex(src, leniency).map_err(|es| error::into_multiple(id.clone(), es))?;
     let file_spanned = parse::parse(id.clone(), src, tokens, leniency).map_err(|es| error::into_multiple(id.clone(), es))?;
     let errors = analyze::validate(&lex_data, &file_spanned, leniency);
@@ -283,7 +286,7 @@ pub fn assemble_file(input: &PathBuf, leniency: LeniencyLevel, no_os: bool) -> R
 /// # Ok(())
 /// # }
 /// ```
-pub fn assemble(id: &SourceId, src: &String, leniency: LeniencyLevel, no_os: bool) -> Result<lc3_isa::util::MemoryDump, error::Error> {
+pub fn assemble(id: &SourceId, src: &str, leniency: LeniencyLevel, no_os: bool) -> Result<lc3_isa::util::MemoryDump, error::Error> {
     let file = parse_and_analyze(id, src, leniency)?;
     let assemble::Object { symbol_table, blocks } = assemble::assemble(file).map_err(|_| (id.clone(), error::SingleError::Assemble))?;
     let blocks = link::link_object_blocks(&symbol_table, blocks).map_err(|e| (id.clone(), e))?;

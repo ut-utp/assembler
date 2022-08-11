@@ -35,7 +35,7 @@ pub fn layer(blocks: impl IntoIterator<Item=Block>, layer_onto_os: bool) -> Resu
             let first_block = blocks.get(0).ok_or(SingleError::Layer)?;
 
             let mut os = lc3_os::OS_IMAGE.clone().0;
-            os[lc3_os::USER_PROG_START_ADDR as usize] = first_block.origin;
+            os[lc3_os::USER_PROG_START_ADDR_SETTING_ADDR as usize] = first_block.origin;
 
             os
         } else {
